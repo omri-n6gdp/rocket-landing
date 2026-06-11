@@ -895,7 +895,19 @@ function loop(ts){ requestAnimationFrame(loop); let dt=(ts-tPrev)/1000; tPrev=ts
 buildMenu(); updateAPBtn();
 // dev/test:  #play:diff:campIdx  watches autopilot live · #sim:diff:campIdx[:dbg] runs it synchronously (result→title)
 //            #shot:diff:campIdx:secs  steps N seconds then paints one frame (for headless screenshots)
+/* ═════════════════ dev tests (#test) ═════════════════ */
+const TESTS=[]; function T_(name,fn){ TESTS.push({name,fn}); }
+function eq(a,b,m){ if(a!==b) throw new Error((m||'eq')+': got '+JSON.stringify(a)+' want '+JSON.stringify(b)); }
+function near(a,b,tol,m){ if(!(Math.abs(a-b)<=tol)) throw new Error((m||'near')+': got '+a+' want '+b+'±'+tol); }
+function ok(v,m){ if(!v) throw new Error(m||'expected truthy'); }
+function runTests(){ let fails=[];
+  for(const t of TESTS){ try{ t.fn(); }catch(e){ fails.push(t.name+' — '+e.message); } }
+  document.title = fails.length ? 'TESTS FAIL '+fails.length+'/'+TESTS.length+' :: '+fails[0]
+                                : 'TESTS PASS '+TESTS.length+'/'+TESTS.length;
+}
+T_('harness sanity', ()=>{ eq(1+1,2); near(0.1+0.2,0.3,1e-9); ok(clamp(5,0,3)===3); });
 (function(){ const p=location.hash.replace('#','').toLowerCase().split(':');
+  if(p[0]==='test'){ runTests(); return; }
   if(p[0]==='sim'||p[0]==='play'||p[0]==='shot'){ tab='campaign'; if(DIFFS[p[1]]) diff=p[1]; if(p[2]!=null&&p[2]!=='') campIdx=clamp(+p[2]||0,0,CAMPAIGN.length-1); ap=1;
     if(p[0]==='shot'){ document.body.classList.add('touch'); startGame(); const secs=+p[3]||8; for(let n=0;n<secs*60&&gameState==='play';n++) update(1/60); render(); updateHUD(); return; }
     if(p[0]==='sim'){ startGame(); let n=0,dbg=''; while(gameState==='play'&&n<14000){ update(1/60); if(n%120===0) dbg+=' t'+(n/60)+'[a'+Math.round(R.y-env.deckY)+' x'+Math.round(R.x-env.padX)+' vx'+R.vx.toFixed(1)+' f'+Math.round(R.fuel)+']'; n++; } if(gameState==='play') document.title='RESULT TIMEOUT alt='+Math.round(R.y-env.deckY)+' vy='+R.vy.toFixed(1); if(p[3]==='dbg') document.title+=' DBG'+dbg; return; }
