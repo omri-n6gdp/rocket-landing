@@ -912,7 +912,7 @@ T_('harness sanity', ()=>{ eq(1+1,2); near(0.1+0.2,0.3,1e-9); ok(clamp(5,0,3)===
     if(p[0]==='shot'){ document.body.classList.add('touch'); startGame(); const secs=+p[3]||8; for(let n=0;n<secs*60&&gameState==='play';n++) update(1/60); render(); updateHUD(); return; }
     if(p[0]==='sim'){ startGame(); let n=0,dbg=''; while(gameState==='play'&&n<14000){ update(1/60); if(n%120===0) dbg+=' t'+(n/60)+'[a'+Math.round(R.y-env.deckY)+' x'+Math.round(R.x-env.padX)+' vx'+R.vx.toFixed(1)+' f'+Math.round(R.fuel)+']'; n++; } if(gameState==='play') document.title='RESULT TIMEOUT alt='+Math.round(R.y-env.deckY)+' vy='+R.vy.toFixed(1); if(p[3]==='dbg') document.title+=' DBG'+dbg; return; }
     updateAPBtn(); setTimeout(startGame,60); } })();
-requestAnimationFrame(loop);
+if(location.hash.toLowerCase().indexOf('#test')!==0) requestAnimationFrame(loop);   // #test: no live loop — tests own all state
 </script>
 </body>
 </html>
