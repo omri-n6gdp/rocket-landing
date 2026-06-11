@@ -489,11 +489,13 @@ function startMission(idx){
 }
 function nextPhase(){
   RUN.pi++;
+  RUN.phaseEnded=false;
   if(RUN.pi>=RUN.m.phases.length){ missionReport(null); return; }
   const spec=RUN.m.phases[RUN.pi];
   PH=PHASES[spec.type]; PH.init(spec,RUN.carry); RUN.carry={};
 }
 function phaseDone(res){
+  if(RUN.phaseEnded) return; RUN.phaseEnded=true;   // a dying phase must not end twice
   RUN.results.push(res); RUN.score+=res.score||0;
   if(res.carry) RUN.carry=res.carry;
   if(res.fail){ missionReport(res); return; }
