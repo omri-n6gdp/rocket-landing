@@ -304,7 +304,7 @@ const ROCKETS={
     rcsBudget:0, stages:[
       {name:'Boost cores', thrust:2100, dry:48, fuel:130, rate:9,    gimbal:true, canLand:true},
       {name:'Stage 2',     thrust:110,  dry:4,  fuel:13,  rate:0.55, gimbal:true, rcs:true}]},
-  lander:  {name:'Lunar Lander', ic:'🛰️', accel:15, fuel:15, rot:95,  rotEase:9,   rcs:true,  h:11, w:5.2, style:'lander',   ds:'Spindly legs, RCS thrusters',
+  lander:  {name:'Lunar Lander', ic:'🛰️', accel:15, fuel:15, rot:95,  rotEase:9,   rcs:true,  h:11, w:5.2, style:'lander',   ds:'Spindly legs, RCS thrusters', // Moon/low-g only: Earth TWR<1
     rcsBudget:10, stages:[
       {name:'Descent', thrust:46, dry:4,  fuel:11, rate:0.8, gimbal:true, canLand:true},
       {name:'Ascent',  thrust:16, dry:2.2,fuel:5,  rate:0.4, gimbal:true, rcs:true}]},
@@ -664,7 +664,7 @@ function endAttempt(verdict,info){
   }
   showReport(verdict,info,score,isBest,success,byAuto);
 }
-function explode(){ for(let i=0;i<70;i++){ const a=Math.random()*TAU,s=rnd(6,40); particles.push({x:R.x,y:Math.max(R.y,env.deckY)+rnd(0,6),vx:Math.cos(a)*s,vy:Math.abs(Math.sin(a)*s)+rnd(2,10),life:rnd(.5,1.4),t:0,size:rnd(2,5),kind:Math.random()<.5?'flame':'spark'}); } }
+function explode(){ for(let i=0;i<70;i++){ const a=Math.random()*TAU,s=rnd(6,40); particles.push({x:R.x,y:Math.max(R.y,env?env.deckY:R.y)+rnd(0,6),vx:Math.cos(a)*s,vy:Math.abs(Math.sin(a)*s)+rnd(2,10),life:rnd(.5,1.4),t:0,size:rnd(2,5),kind:Math.random()<.5?'flame':'spark'}); } }
 
 /* ═════════════════ render ═════════════════ */
 function render(){
@@ -934,6 +934,7 @@ T_('harness sanity', ()=>{ eq(1+1,2); near(0.1+0.2,0.3,1e-9); ok(clamp(5,0,3)===
 T_('craft: mass stacks stages', ()=>{
   const c=mkCraft('falcon9');
   near(craftMass(c), 22+60+(4+12), 1e-9, 'wet mass incl upper stage');
+  near(stagesAbove(mkCraft('hopper'),0),0,1e-9,'single stage above=0');
 });
 T_('craft: accel rises as fuel burns', ()=>{
   const c=mkCraft('falcon9'); const a0=craftAccel(c,1);
@@ -942,6 +943,7 @@ T_('craft: accel rises as fuel burns', ()=>{
 });
 T_('craft: burn consumes, clamps at 0, cuts thrust', ()=>{
   const c=mkCraft('falcon9'); c.stages[0].fuel=1;
+  eq(craftAccel(c,0),0,'zero thr zero accel');
   burnStage(c,1,2);           // rate 4 → wants 8, clamps to 1
   eq(c.stages[0].fuel,0); eq(craftAccel(c,1),0,'no fuel no thrust');
 });
