@@ -474,6 +474,38 @@ function buildTerrain(kind,rocket,D){
   }
   return {kind,padW,deck0,rough,clearY,ground,gap,towerTop,seed};
 }
+/* ═════════════════ PHASE ENGINE ═════════════════
+   A mission = chain of phase specs. Cross-phase data passes ONLY via RUN.carry. */
+let RUN=null, PH=null, TRANS=null, _missionReportHook=null;
+const PHASES={};
+function startMission(idx){
+  const m=CAMPAIGN[idx];
+  RUN={ idx, m, pi:-1, results:[], carry:{}, score:0, craft:mkCraft(m.r) };
+  WLD=WORLDS[m.w];
+  paused=false; particles.length=0; shake=0; apLatch=false; apIx=0; apPrevPadX=0;
+  $('#menu').classList.remove('show'); $('#report').classList.remove('show'); $('#pause').classList.remove('show');
+  $('#hud').classList.add('on'); gameState='play'; updateAPBtn(); audioResume();
+  nextPhase();
+}
+function nextPhase(){
+  RUN.pi++;
+  if(RUN.pi>=RUN.m.phases.length){ missionReport(null); return; }
+  const spec=RUN.m.phases[RUN.pi];
+  PH=PHASES[spec.type]; PH.init(spec,RUN.carry); RUN.carry={};
+}
+function phaseDone(res){
+  RUN.results.push(res); RUN.score+=res.score||0;
+  if(res.carry) RUN.carry=res.carry;
+  if(res.fail){ missionReport(res); return; }
+  if(RUN.pi>=RUN.m.phases.length-1){ missionReport(null); return; }
+  TRANS={t:0, dur:1.6, label:RUN.m.phases[RUN.pi+1].label||''};
+}
+function skipTransition(){ if(TRANS){ TRANS=null; nextPhase(); } }
+function stepTransition(dt){ if(!TRANS) return false; TRANS.t+=dt; if(TRANS.t>=TRANS.dur){ TRANS=null; nextPhase(); } return true; }
+function missionReport(failRes){
+  if(_missionReportHook){ _missionReportHook(failRes||{}); return; }   // tests stub the UI
+  endMission(failRes);   // real report UI — Task 4
+}
 function startGame(){
   const m=resolveMission();
   WLD=WORLDS[m.w]; const RK=ROCKETS[m.r], D=DIFFS[diff];
@@ -952,6 +984,31 @@ T_('craft: staging drops mass, TWR jumps', ()=>{
   ok(canStage(c)); ok(doStage(c)); eq(c.si,1);
   near(craftMass(c), 4+12, 1e-9);
   ok(!canStage(c)); ok(!doStage(c),'cannot stage past last');
+});
+T_('phases: chain runs to completion', ()=>{
+  let log=[];
+  PHASES._a={init(s,c){log.push('a:'+(c.x||0));}, update(dt){ phaseDone({score:100, carry:{x:7}}); }, render(){}};
+  PHASES._b={init(s,c){log.push('b:'+c.x);},      update(dt){ phaseDone({score:50}); },              render(){}};
+  RUN={ m:{name:'t', phases:[{type:'_a'},{type:'_b'}] }, pi:-1, results:[], carry:{}, score:0, craft:mkCraft('falcon9'), reported:false };
+  _missionReportHook=r=>{ RUN.reported=true; };
+  nextPhase();                       // enters _a
+  PH.update(1/60); skipTransition(); // _a done → transition → _b
+  PH.update(1/60); skipTransition();
+  eq(log.join('|'),'a:0|b:7','carry passed');
+  eq(RUN.score,150); ok(RUN.reported,'mission report fired');
+  _missionReportHook=null;
+  RUN=null; PH=null;
+});
+T_('phases: fail short-circuits', ()=>{
+  let log=[];
+  PHASES._f={init(){}, update(dt){ phaseDone({fail:'BREAKUP', score:0}); }, render(){}};
+  PHASES._n={init(){log.push('never');}, update(){}, render(){}};
+  RUN={ m:{name:'t', phases:[{type:'_f'},{type:'_n'}] }, pi:-1, results:[], carry:{}, score:0, craft:mkCraft('falcon9'), reported:false };
+  _missionReportHook=r=>{ RUN.reported=true; RUN.failv=r.fail; };
+  nextPhase(); PH.update(1/60);
+  eq(log.length,0,'next phase never inits'); eq(RUN.failv,'BREAKUP');
+  _missionReportHook=null;
+  RUN=null; PH=null;
 });
 (function(){ const p=location.hash.replace('#','').toLowerCase().split(':');
   if(p[0]==='test'){ runTests(); return; }
