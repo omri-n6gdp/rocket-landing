@@ -210,8 +210,8 @@
     <p class="sub">Fly real rockets down to real landings across Earth, the Moon and Mars. Stick the touchdown — soft, upright, on the pad.</p>
 
     <div class="tabs">
-      <div class="tab sel" id="tabCampaign">🗺 Campaign</div>
-      <div class="tab" id="tabFree">🛰 Free Flight</div>
+      <div class="tab sel" id="tabCampaign">🗺 Missions</div>
+      <div class="tab" id="tabFree">🛠 Practice</div>
     </div>
 
     <div class="section-h">Difficulty</div>
@@ -339,24 +339,8 @@ const TERRAINS={
 const H0={wind:0,gust:0,moving:0,fog:0,dust:0,flick:0,fuelMul:1,altMul:1};
 function hz(o){ return Object.assign({},H0,o); }
 const CAMPAIGN=[
-  {w:'port',r:'falcon9', t:'pad',      h:hz({}),                       a:240, name:'First Landing',   d:'Calm air, solid ground. Learn the controls.'},
-  {w:'port',r:'falcon9', t:'pad',      h:hz({wind:1}),                 a:250, name:'Crosswind',       d:'A steady breeze pushes you sideways.'},
-  {w:'port',r:'falcon9', t:'pad',      h:hz({wind:.5,gust:1}),         a:255, name:'Gusty Day',       d:'The wind shifts without warning.'},
-  {w:'sea', r:'falcon9', t:'ship',     h:hz({wind:.4}),                a:250, name:'Drone Ship',      d:'Land on the autonomous ship at night.'},
-  {w:'sea', r:'falcon9', t:'ship',     h:hz({wind:.5,gust:.5,moving:1}),a:260,name:'Rough Seas',      d:'The deck drifts on the swell.'},
-  {w:'sea', r:'heavy',   t:'ship',     h:hz({wind:.4,moving:.7}),      a:270, name:'Heavy Recovery',  d:'Bring the wide Falcon Heavy core down.'},
-  {w:'moon',r:'lander',  t:'pad',      h:hz({}),                       a:230, name:'Lunar Touchdown', d:'One-sixth gravity. Gentle, but twitchy.'},
-  {w:'moon',r:'lander',  t:'mountains',h:hz({}),                       a:250, name:'Crater Rim',      d:'Thread down onto a plateau in the highlands.'},
-  {w:'moon',r:'hopper',  t:'pad',      h:hz({fuelMul:.8}),             a:240, name:'Lunar Hopper',    d:'Tiny hopper, tiny tank. Be efficient.'},
-  {w:'mars',r:'falcon9', t:'pad',      h:hz({wind:.5,dust:.5}),        a:250, name:'Red Planet',      d:'Thin air, rusty light, a little dust.'},
-  {w:'mars',r:'starship',t:'pad',      h:hz({wind:.7,gust:.8,dust:1}), a:270, name:'Dust Storm',      d:'Starship through a Martian dust storm.'},
-  {w:'mars',r:'starship',t:'mountains',h:hz({wind:.4,dust:.6}),        a:280, name:'Canyon Landing',  d:'Drop into a canyon plateau on Mars.'},
-  {w:'mars',r:'falcon9', t:'platform', h:hz({wind:.5,dust:.5}),        a:260, name:'Mars Platform',   d:'Land atop a raised Martian platform.'},
-  {w:'port',r:'falcon9', t:'platform', h:hz({wind:.6}),                a:250, name:'Helipad',         d:'A small elevated pad — miss it and you fall.'},
-  {w:'port',r:'falcon9', t:'pad',      h:hz({fog:1,wind:.5}),          a:250, name:'Fogbound',        d:'Thick fog. Fly on instruments.'},
-  {w:'port',r:'falcon9', t:'pad',      h:hz({flick:1,wind:.4}),        a:255, name:'Engine Trouble',  d:'The engine misfires. Expect the unexpected.'},
-  {w:'port',r:'starship',t:'tower',    h:hz({wind:.4}),                a:280, name:'The Catch',       d:'Mechazilla: settle into the chopstick slot.'},
-  {w:'mars',r:'starship',t:'mountains',h:hz({wind:.6,gust:.8,dust:1,fuelMul:.8}),a:300, name:'Grand Finale', d:'Canyon, dust storm, low fuel. Everything at once.'},
+  {w:'port',r:'falcon9',name:'First Landing (temp)',d:'Placeholder until ascent ships.',
+   phases:[{type:'land',label:'LAND',world:'port',terrain:'pad',rocket:'falcon9',a:240}]},
 ];
 
 /* ═════════════════ persistence ═════════════════ */
@@ -366,6 +350,10 @@ function load(){ try{return JSON.parse(localStorage.getItem(SKEY))||{}}catch(e){
 function persist(){ try{localStorage.setItem(SKEY,JSON.stringify(save))}catch(e){} }
 function prog(d){ if(!save[d]) save[d]={unlocked:0,best:{}}; return save[d]; }
 let muted=!!save.mute;
+const SKEY3='boosterLanding.v3';
+let save3=(function(){ try{return JSON.parse(localStorage.getItem(SKEY3))||{}}catch(e){return{}} })();
+function persist3(){ try{localStorage.setItem(SKEY3,JSON.stringify(save3))}catch(e){} }
+function prog3(d){ if(!save3[d]) save3[d]={unlocked:0,best:{}}; return save3[d]; }
 
 /* ═════════════════ canvas ═════════════════ */
 const cv=$('#game'), ctx=cv.getContext('2d');
@@ -400,7 +388,7 @@ addEventListener('keydown',e=>{
   if(['arrowup','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
   keys[k]=true;
   if(k==='p'){ if(gameState==='play') togglePause(); }
-  if(k==='r'){ if(gameState==='play'||gameState==='result') startGame(); }
+  if(k==='r'){ if((gameState==='play'||gameState==='result')&&relaunch) relaunch(); }
   if(k==='h') cycleAP();
   if(k==='escape') openMenu();
 });
@@ -444,16 +432,7 @@ function updateMuteBtn(){ $('#muteBtn').textContent=muted?'🔇':'🔊'; }
 $('#muteBtn').onclick=()=>{ muted=!muted; save.mute=muted; persist(); updateMuteBtn(); if(muted) setThrustSound(0); audioResume(); };
 updateMuteBtn();
 
-/* ═════════════════ build a run (merge layers) ═════════════════ */
-function resolveMission(){
-  if(tab==='campaign') return CAMPAIGN[campIdx];
-  // free flight: derive light hazards from world/terrain for flavour
-  const w=freeWorld, h=hz({});
-  if(WORLDS[w].wind>0) h.wind=.5;
-  if(w==='mars') h.dust=.6;
-  if(freeTerrain==='ship') h.moving=.7;
-  return {w, r:freeRocket, t:freeTerrain, h, a:250, name:'Free Flight', d:''};
-}
+/* ═════════════════ build terrain ═════════════════ */
 function buildTerrain(kind,rocket,D){
   const rw=rocket.w, seed=rnd(0,1000), pad=v=>v*D.padScale;
   let padW,deck0,rough=false,clearY=0,ground,gap=0,towerTop=0;
@@ -508,32 +487,36 @@ function missionReport(failRes){
   if(_missionReportHook){ _missionReportHook(failRes||{}); return; }   // tests stub the UI
   endMission(failRes);   // real report UI — Task 4
 }
-function startGame(){
-  const m=resolveMission();
-  WLD=WORLDS[m.w]; const RK=ROCKETS[m.r], D=DIFFS[diff];
-  T=buildTerrain(m.t,RK,D);
-  MS={...m.h, name:m.name, world:m.w, terrain:m.t, rocketName:RK.name};
+/* land params: {world,terrain,rocket,hazards,a,craft|null,carry:{xOff,vx,vy}|null,nameTag} */
+function landInit(o){
+  resize();
+  WLD=WORLDS[o.world]; const RK=ROCKETS[o.rocket], D=DIFFS[diff];
+  T=buildTerrain(o.terrain,RK,D);
+  MS={...hz(o.hazards||{}), name:o.nameTag||'Landing', world:o.world, terrain:o.terrain, rocketName:RK.name};
   M={ g:WLD.g, wind:WLD.wind, accel:RK.accel, fuel:RK.fuel, rot:RK.rot, rotEase:RK.rotEase, rcs:RK.rcs,
       rh:RK.h, rw:RK.w, style:RK.style, vMax:D.vMax, hMax:D.hMax, tilt:D.tilt, autoLevel:D.autoLevel,
       mult:D.mult, pad:T.padW, mc:D.dc };
-  const startAlt=(m.a||250)*MS.altMul + T.deck0;
-  const dir=Math.random()<.5?-1:1, steady=dir*M.wind*MS.wind;
-  const amp=MS.moving*7;
-  R={ x:rnd(-1,1)*M.pad*0.5, y:startAlt, vx:steady*0.7+rnd(-1,1)*0.6, vy:-7,
-      angle:rnd(-1,1)*0.05, av:0, fuel:100, throttle:0, legs:0, exhaust:0 };
+  if(o.craft){ const s=o.craft.stages[o.craft.si];               // mission flight: stage-driven engine
+    M.accel=s.thrust/craftMass(o.craft); M.craft=o.craft; M.fuelCap=s.fuel0; }
+  const startAlt=(o.a||250)*MS.altMul + T.deck0;
+  const dir=Math.random()<.5?-1:1, steady=dir*M.wind*MS.wind, amp=MS.moving*7;
+  const c=o.carry||{};
+  R={ x:(c.xOff!==undefined?c.xOff:rnd(-1,1)*M.pad*0.5), y:startAlt,
+      vx:(c.vx!==undefined?c.vx:steady*0.7+rnd(-1,1)*0.6), vy:(c.vy!==undefined?c.vy:-7),
+      angle:rnd(-1,1)*0.05, av:0, throttle:0, legs:0, exhaust:0,
+      fuel: o.craft? 100*o.craft.stages[o.craft.si].fuel/M.fuelCap : 100 };
   env={ t:0, windCur:steady, windTarget:steady, steady, gustT:rnd(1,2.5),
         padX:0, deckY:T.deck0, amp, freq:0.28, dust:[] };
   particles.length=0; shake=0;
-  cam.bottom=R.y-0.62*VIS; cam.x=0;
-  paused=false; apLatch=false; apIx=0; apPrevPadX=0;
-  gameState='play'; updateAPBtn();
-  $('#menu').classList.remove('show'); $('#report').classList.remove('show'); $('#pause').classList.remove('show');
-  $('#hud').classList.add('on');
-  document.body.classList.toggle('rcs',M.rcs);
-  const where = tab==='campaign' ? ('M'+(campIdx+1)+' · '+m.name) : (TERRAINS[m.t].name);
-  $('#missionTag').innerHTML='<b>'+WLD.name+'</b> · '+RK.name+' · '+where;
-  audioResume();
+  cam.bottom=R.y-0.62*VIS; cam.x=0; apLatch=false; apIx=0; apPrevPadX=0;
+  document.body.classList.toggle('rcs',M.rcs); document.body.classList.remove('asc');
+  $('#missionTag').innerHTML='<b>'+WLD.name+'</b> · '+RK.name+' · '+(o.nameTag||TERRAINS[o.terrain].name);
 }
+PHASES.land={
+  init(spec,carry){ landInit({...spec, carry, craft:RUN?RUN.craft:null}); },
+  update(dt){ landUpdate(dt); },
+  render(){ /* world rendering stays in render(); nothing extra */ },
+};
 
 /* ═════════════════ AUTOPILOT (feedback / PID-style) ═════════════════
    Reads only HUD-visible state; outputs the same binary controls as the player. */
@@ -591,7 +574,11 @@ function autopilot(dt){
 }
 
 /* ═════════════════ update ═════════════════ */
-function update(dt){
+function update(dt){            // dispatcher: transitions → mission phase → legacy practice
+  if(stepTransition(dt)) return;
+  if(RUN){ if(PH) PH.update(dt); } else landUpdate(dt);
+}
+function landUpdate(dt){
   env.t+=dt;
   if(MS.gust>0){ env.gustT-=dt; if(env.gustT<=0){ env.windTarget=env.steady+rnd(-1,1)*M.wind*MS.gust; env.gustT=rnd(1.4,3.2);} }
   env.windCur=lerp(env.windCur,env.windTarget,clamp(dt*0.7,0,1));
@@ -618,7 +605,9 @@ function update(dt){
   if(R.throttle>0.02 && R.fuel>0){
     const acc=R.throttle*M.accel*flick;
     ax+=acc*Math.sin(R.angle); ay+=acc*Math.cos(R.angle);
-    R.fuel=Math.max(0,R.fuel-R.throttle*(100/(M.fuel*MS.fuelMul))*dt);
+    if(M.craft){ burnStage(M.craft,R.throttle,dt); R.fuel=100*M.craft.stages[M.craft.si].fuel/M.fuelCap;
+      M.accel=M.craft.stages[M.craft.si].thrust/craftMass(M.craft); }   // TWR rises as the stage lightens
+    else R.fuel=Math.max(0,R.fuel-R.throttle*(100/(M.fuel*MS.fuelMul))*dt);
   }
   if(M.rcs && R.fuel>0){ const r=input.rcsR-input.rcsL; if(r){ ax+=r*4.2; R.fuel=Math.max(0,R.fuel-Math.abs(r)*4*dt); } }
   R.vx+=ax*dt; R.vy+=ay*dt; R.x+=R.vx*dt; R.y+=R.vy*dt; R.exhaust=R.throttle*flick;
@@ -644,14 +633,14 @@ function update(dt){
   cam.bottom=lerp(cam.bottom,tb,clamp(dt*3.5,0,1));
   cam.x=lerp(cam.x,clamp((R.x+env.padX)/2,-110,110),clamp(dt*3,0,1));
 
-  if(Math.abs(R.x-env.padX)>200){ endAttempt('LOST',{reason:'Drifted out of range'}); return; }
+  if(Math.abs(R.x-env.padX)>200){ RUN?phaseDone({fail:'LOST',reason:'Drifted out of range',score:0}):endAttempt('LOST',{reason:'Drifted out of range'}); return; }
   // collision
   if(R.vy<0){
     const overPad=Math.abs(R.x-env.padX)<=T.padW/2;
-    if(overPad && R.y<=env.deckY){ evaluateLanding(); return; }
+    if(overPad && R.y<=env.deckY){ RUN?landEvalMission():evaluateLanding(); return; }
     if(R.y<=T.ground(R.x)){ // hit terrain / water / tower off the pad
       const reason = T.kind==='ship'?'Splashdown — missed the deck' : T.kind==='tower'?'Hit the tower' : 'Crashed into the terrain';
-      R.y=T.ground(R.x); endAttempt('CRASH',{reason}); return;
+      R.y=T.ground(R.x); RUN?phaseDone({fail:'CRASH',reason,score:0}):endAttempt('CRASH',{reason}); return;
     }
   }
 }
@@ -677,6 +666,20 @@ function evaluateLanding(){
     endAttempt('HARD',{vdesc,hsp,tilt,success:true,hard:true});
   } else endAttempt('CRASH',{reason:'Came in too hot',vdesc,hsp,tilt});
 }
+function landEvalMission(){
+  const impactVy=R.vy, impactVx=R.vx; R.y=env.deckY; R.vy=0;
+  const vdesc=Math.abs(impactVy), hsp=Math.abs(impactVx), tilt=Math.abs(R.angle*DEG);
+  const okV=vdesc<=M.vMax, okH=hsp<=M.hMax, okT=tilt<=M.tilt;
+  const soft=clamp(1-vdesc/M.vMax,0,1), up=clamp(1-tilt/M.tilt,0,1),
+        acc=clamp(1-Math.abs(R.x-env.padX)/(M.pad/2),0,1);
+  if(okV&&okH&&okT){
+    const perfect=vdesc<=M.vMax*0.45&&hsp<=M.hMax*0.5&&tilt<=M.tilt*0.5&&Math.abs(R.x-env.padX)<=M.pad*0.22;
+    sndSuccess(); sndThud(clamp(vdesc/M.vMax,0,1));
+    phaseDone({verdict:perfect?'PERFECT':'GOOD', score:Math.round((1100+soft*1500+acc*1200+up*600)*M.mult)});
+  } else if(vdesc<=M.vMax*1.7&&hsp<=M.hMax*1.8&&tilt<=M.tilt*1.8){
+    sndThud(1); phaseDone({verdict:'HARD', score:Math.round(350*M.mult)});
+  } else { sndBoom(); explode(); shake=1.4; phaseDone({fail:'CRASH', reason:'Came in too hot', score:0}); }
+}
 function endAttempt(verdict,info){
   gameState='result';
   const success=!!info.success, byAuto=ap!==0;
@@ -698,6 +701,30 @@ function endAttempt(verdict,info){
   }
   showReport(verdict,info,score,isBest,success,byAuto);
 }
+function endMission(failRes){
+  gameState='result'; setThrustSound(0);
+  const fail=failRes&&failRes.fail, byAuto=ap!==0;
+  const verdict=fail||((RUN.results.every(r=>r.verdict==='PERFECT'))?'PERFECT':'COMPLETE');
+  const score=fail?0:Math.round(RUN.score*(1+RUN.idx*0.07));
+  let isBest=false;
+  if(!fail&&!byAuto){ const p=prog3(diff);
+    if(RUN.idx>=p.unlocked) p.unlocked=Math.min(CAMPAIGN.length-1,RUN.idx+1);
+    if(!p.best[RUN.idx]||score>p.best[RUN.idx]){ p.best[RUN.idx]=score; isBest=true; } persist3(); }
+  const colors={PERFECT:'var(--green)',COMPLETE:'var(--cyan)',CRASH:'var(--red)',LOST:'var(--red)',BREAKUP:'var(--red)',BURNUP:'var(--red)'};
+  $('#rVerdict').innerHTML=verdict+(byAuto?' <span style="font-size:.4em;vertical-align:middle;color:var(--cyan);font-weight:700">🤖 AUTOPILOT</span>':'');
+  $('#rVerdict').style.color=colors[verdict]||'var(--ink)';
+  $('#rSub').textContent=fail?(failRes.reason||'Mission failed.'):'Mission complete — every phase flown.';
+  $('#rStats').innerHTML=RUN.m.phases.map((p,i)=>{ const r=RUN.results[i];
+    const v=r?(r.fail||r.verdict||'OK'):'—';
+    return '<div class="rstat"><div class="k">'+(p.label||p.type)+'</div><div class="v" style="color:'+(r&&!r.fail?'var(--green)':(r?'var(--red)':'var(--faint)'))+'">'+v+'</div></div>'; }).join('');
+  $('#rScore').textContent=score.toLocaleString();
+  const best=prog3(diff).best[RUN.idx]||0;
+  $('#rBest').innerHTML=byAuto?'flown by autopilot · not saved':(!fail?('best '+best.toLocaleString()+(isBest?'<span class="newbest">NEW BEST</span>':'')):'');
+  $('#rNext').style.display=(!fail&&RUN.idx<CAMPAIGN.length-1)?'':'none';
+  $('#report').classList.add('show');
+  document.title='RESULT '+verdict+(byAuto?' AUTO':'')+' M'+(RUN.idx+1)+' score='+score
+    +' phases='+RUN.results.map(r=>r.fail||r.verdict||'ok').join(',');
+}
 function explode(){ for(let i=0;i<70;i++){ const a=Math.random()*TAU,s=rnd(6,40); particles.push({x:R.x,y:Math.max(R.y,env?env.deckY:R.y)+rnd(0,6),vx:Math.cos(a)*s,vy:Math.abs(Math.sin(a)*s)+rnd(2,10),life:rnd(.5,1.4),t:0,size:rnd(2,5),kind:Math.random()<.5?'flame':'spark'}); } }
 
 /* ═════════════════ render ═════════════════ */
@@ -709,6 +736,10 @@ function render(){
   if(gameState==='play'||gameState==='result'){ drawParticles(); if(R) drawRocket(); }
   if(gameState==='play') drawGuides();
   if(WLD.haze||MS.dust||MS.fog) drawAtmosphere();
+  if(TRANS){ const k=Math.min(1,TRANS.t/0.4), k2=TRANS.t>TRANS.dur-0.4?(TRANS.dur-TRANS.t)/0.4:1;
+    ctx.globalAlpha=Math.min(k,k2)*0.85; ctx.fillStyle='#04070f'; ctx.fillRect(0,0,W,H);
+    ctx.globalAlpha=Math.min(k,k2); ctx.fillStyle='#8b97bb'; ctx.font='600 13px IBM Plex Mono';
+    ctx.textAlign='center'; ctx.fillText(TRANS.label||'…',W/2,H/2); ctx.textAlign='left'; ctx.globalAlpha=1; }
   ctx.restore();
 }
 function drawSkyWorld(){
@@ -918,10 +949,10 @@ function buildMenu(){
   if(tab==='campaign') buildCampaign(); else buildFree();
 }
 function buildCampaign(){
-  const p=prog(diff);
+  const p=prog3(diff);
   $('#campProgress').textContent='('+Math.min(p.unlocked+1,CAMPAIGN.length)+' / '+CAMPAIGN.length+' unlocked · '+DIFFS[diff].name+')';
-  $('#missions').innerHTML=CAMPAIGN.map((m,i)=>{ const locked=i>p.unlocked, best=p.best[i], W=WORLDS[m.w];
-    const tags=[W.ic+' '+W.name.split(' · ').pop(), ROCKETS[m.r].name, TERRAINS[m.t].name];
+  $('#missions').innerHTML=CAMPAIGN.map((m,i)=>{ const locked=i>p.unlocked, best=p.best[i];
+    const tags=[WORLDS[m.w].ic+' '+WORLDS[m.w].name.split(' · ').pop(), m.phases.length+' phase'+(m.phases.length>1?'s':'')];
     return '<div class="mish'+(i===campIdx&&!locked?' sel':'')+(locked?' locked':'')+(best?' done':'')+'" data-i="'+i+'">'
       +(locked?'<div class="lk">🔒</div>':'')+'<div class="num">MISSION '+(i+1)+'</div><div class="mn">'+m.name+'</div>'
       +'<div class="md">'+m.d+'</div><div class="tags">'+tags.map(t=>'<span class="tg">'+t+'</span>').join('')+'</div>'
@@ -938,22 +969,32 @@ function buildFree(){
   $$('#pickTerrain .opt').forEach(el=>el.onclick=()=>{freeTerrain=el.dataset.v; buildFree();});
 }
 function opt(kind,k,sel,ic,nm,ds){ return '<div class="opt'+(sel?' sel':'')+'" data-v="'+k+'"><div class="ic">'+ic+'</div><div class="nm">'+nm+'</div><div class="ds">'+ds+'</div></div>'; }
-function openMenu(){ gameState='menu'; paused=false; setThrustSound(0); $('#hud').classList.remove('on'); $('#report').classList.remove('show'); $('#pause').classList.remove('show'); if(tab==='campaign') campIdx=Math.min(campIdx,prog(diff).unlocked); buildMenu(); $('#menu').classList.add('show'); }
+function openMenu(){ gameState='menu'; paused=false; setThrustSound(0); RUN=null; PH=null; TRANS=null; document.body.classList.remove('asc'); $('#hud').classList.remove('on'); $('#report').classList.remove('show'); $('#pause').classList.remove('show'); if(tab==='campaign') campIdx=Math.min(campIdx,prog3(diff).unlocked); buildMenu(); $('#menu').classList.add('show'); }
 function togglePause(){ if(gameState!=='play') return; paused=!paused; $('#pause').classList.toggle('show',paused); if(paused) setThrustSound(0); }
 
 $('#tabCampaign').onclick=()=>{ tab='campaign'; buildMenu(); };
 $('#tabFree').onclick=()=>{ tab='free'; buildMenu(); };
-$('#playBtn').onclick=()=>{ audioResume(); startGame(); };
+let relaunch=null;
+$('#playBtn').onclick=()=>{ audioResume();
+  if(tab==='campaign'){ relaunch=()=>startMission(campIdx); relaunch(); }
+  else { relaunch=()=>{ RUN=null; PH=null; TRANS=null;
+      landInit({world:freeWorld,terrain:freeTerrain,rocket:freeRocket,hazards:practiceHaz(),a:250,nameTag:'Practice'});
+      paused=false; gameState='play'; updateAPBtn();
+      $('#menu').classList.remove('show'); $('#report').classList.remove('show'); $('#pause').classList.remove('show');
+      $('#hud').classList.add('on'); audioResume(); };
+    relaunch(); } };
+function practiceHaz(){ const h={}; if(WORLDS[freeWorld].wind>0) h.wind=.5;
+  if(freeWorld==='mars') h.dust=.6; if(freeTerrain==='ship') h.moving=.7; return h; }
 $('#menuBtn').onclick=openMenu; $('#apBtn').onclick=cycleAP;
-$('#rRetry').onclick=startGame; $('#rMenu').onclick=openMenu;
-$('#rNext').onclick=()=>{ if(tab==='campaign'&&campIdx<CAMPAIGN.length-1) campIdx++; startGame(); };
+$('#rRetry').onclick=()=>relaunch&&relaunch(); $('#rMenu').onclick=openMenu;
+$('#rNext').onclick=()=>{ if(RUN&&RUN.idx<CAMPAIGN.length-1){ relaunch=(i=>()=>startMission(i))(RUN.idx+1); relaunch(); } };
 $('#pResume').onclick=togglePause; $('#pMenu').onclick=openMenu;
 
 /* ═════════════════ loop ═════════════════ */
 function loop(ts){ requestAnimationFrame(loop); let dt=(ts-tPrev)/1000; tPrev=ts; dt=Math.min(dt,0.045); if(gameState==='play'&&!paused) update(dt); render(); updateHUD(); }   // schedule first: a bad frame must never kill the loop
 buildMenu(); updateAPBtn();
-// dev/test:  #play:diff:campIdx  watches autopilot live · #sim:diff:campIdx[:dbg] runs it synchronously (result→title)
-//            #shot:diff:campIdx:secs  steps N seconds then paints one frame (for headless screenshots)
+// dev/test:  #play:diff:campIdx  watches autopilot live · #sim:diff:campIdx runs the mission synchronously (result→title)
+//            #simland:diff:terrain:rocket  runs a single legacy landing flight (regression harness) · #shot:diff:campIdx:secs  one frame
 /* ═════════════════ dev tests (#test) ═════════════════ */
 const TESTS=[]; function T_(name,fn){ TESTS.push({name,fn}); }
 function eq(a,b,m){ if(a!==b) throw new Error((m||'eq')+': got '+JSON.stringify(a)+' want '+JSON.stringify(b)); }
@@ -1014,10 +1055,22 @@ T_('phases: fail short-circuits', ()=>{
 });
 (function(){ const p=location.hash.replace('#','').toLowerCase().split(':');
   if(p[0]==='test'){ runTests(); return; }
-  if(p[0]==='sim'||p[0]==='play'||p[0]==='shot'){ tab='campaign'; if(DIFFS[p[1]]) diff=p[1]; if(p[2]!=null&&p[2]!=='') campIdx=clamp(+p[2]||0,0,CAMPAIGN.length-1); ap=1;
-    if(p[0]==='shot'){ document.body.classList.add('touch'); startGame(); const secs=+p[3]||8; for(let n=0;n<secs*60&&gameState==='play';n++) update(1/60); render(); updateHUD(); return; }
-    if(p[0]==='sim'){ startGame(); let n=0,dbg=''; while(gameState==='play'&&n<14000){ update(1/60); if(n%120===0) dbg+=' t'+(n/60)+'[a'+Math.round(R.y-env.deckY)+' x'+Math.round(R.x-env.padX)+' vx'+R.vx.toFixed(1)+' f'+Math.round(R.fuel)+']'; n++; } if(gameState==='play') document.title='RESULT TIMEOUT alt='+Math.round(R.y-env.deckY)+' vy='+R.vy.toFixed(1); if(p[3]==='dbg') document.title+=' DBG'+dbg; return; }
-    updateAPBtn(); setTimeout(startGame,60); } })();
+  if(p[0]==='simland'){ diff=DIFFS[p[1]]?p[1]:'realistic'; ap=1;
+    RUN=null; PH=null;
+    landInit({world:(p[3]==='lander'||p[3]==='hopper')?'moon':(p[2]==='ship'?'sea':'port'),
+      terrain:TERRAINS[p[2]]?p[2]:'pad', rocket:ROCKETS[p[3]]?p[3]:'falcon9', a:250, nameTag:'simland'});
+    gameState='play';
+    let n=0; while(gameState==='play'&&n<14000){ landUpdate(1/60); n++; }
+    if(gameState==='play') document.title='RESULT TIMEOUT';
+    return; }
+  if(p[0]==='sim'){ diff=DIFFS[p[1]]?p[1]:'realistic'; ap=1;
+    startMission(clamp(+p[2]||0,0,CAMPAIGN.length-1));
+    let n=0; while(gameState==='play'&&n<60000){ update(1/60); n++; }
+    if(gameState==='play') document.title='RESULT TIMEOUT';
+    return; }
+  if(p[0]==='play'||p[0]==='shot'){ tab='campaign'; if(DIFFS[p[1]]) diff=p[1]; if(p[2]!=null&&p[2]!=='') campIdx=clamp(+p[2]||0,0,CAMPAIGN.length-1); ap=1;
+    if(p[0]==='shot'){ document.body.classList.add('touch'); startMission(campIdx); const secs=+p[3]||8; for(let n=0;n<secs*60&&gameState==='play';n++) update(1/60); render(); updateHUD(); return; }
+    updateAPBtn(); setTimeout(()=>startMission(campIdx),60); } })();
 if(location.hash.toLowerCase().indexOf('#test')!==0) requestAnimationFrame(loop);   // #test: no live loop — tests own all state
 </script>
 </body>
