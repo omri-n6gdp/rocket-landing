@@ -564,7 +564,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Files:** Modify `index.html`: new section after `PHASES.land` block; HTML `#touch` div; CSS; `updateHUD` dispatcher; `explode()` guard; `drawGuides` guard; TESTS block.
 
-- [ ] **Step 1: Failing logic tests** (append to TESTS):
+- [x] **Step 1: Failing logic tests** (append to TESTS):
 
 ```js
 T_('ascent: pitch ladder is 0 on the pad, eastward and capped high up', ()=>{
@@ -579,9 +579,9 @@ T_('ascent: Max-Q envelope narrows with q then relaxes', ()=>{
 });
 ```
 
-- [ ] **Step 2: Run, verify FAIL** — `run test` → `TESTS FAIL 2/9 :: … ascPitchTarget is not defined`.
+- [x] **Step 2: Run, verify FAIL** — `run test` → `TESTS FAIL 2/9 :: … ascPitchTarget is not defined`.
 
-- [ ] **Step 3: Implement the phase.** Insert after the `PHASES.land` registration:
+- [x] **Step 3: Implement the phase.** Insert after the `PHASES.land` registration:
 
 ```js
 /* ═════════════════ ASCENT PHASE ═════════════════
@@ -716,7 +716,7 @@ function ascRender(){
 }
 ```
 
-- [ ] **Step 4: Wire the shared bits** (each is a small precise edit):
+- [x] **Step 4: Wire the shared bits** (each is a small precise edit):
 
 1. `render()` world section — ascent draws its own world: change
    `if(env) drawTerrain();` → stays, and change `if(gameState==='play') drawGuides();` → `if(gameState==='play'&&env) drawGuides();`
@@ -757,14 +757,14 @@ function setCardLabels(l){ $$('.tele .tcard .k').forEach((k,i)=>k.textContent=l[
 5. Touch STAGE button. HTML inside `#touch`: `<div class="tbtn" id="tStage">STAGE</div>`; CSS: `#tStage{right:calc(18px + env(safe-area-inset-right,0px));bottom:calc(132px + env(safe-area-inset-bottom,0px));width:58px;height:58px;display:none} body.asc #tStage{display:grid}` (+ phone block: `#tStage{bottom:calc(136px + env(safe-area-inset-bottom,0px))}`); JS: add `'#tStage:_tStage'` to the bindTouch list.
 6. `openMenu()`/`endMission()` cleanup: add `document.body.classList.remove('asc')` to `openMenu`, and in `PHASES.land.init` too (entering landing from ascent).
 
-- [ ] **Step 5: Run tests + first full-mission sims**
+- [x] **Step 5: Run tests + first full-mission sims**
 
 `run test` → `TESTS PASS 9/9`.
 `run sim:realistic:0` → expected `RESULT COMPLETE AUTO M1 score=… phases=OK,GOOD` (verdict letters may vary GOOD/PERFECT/HARD but no fail).
 M2 will TIMEOUT (entry phase missing) — expected until Task 7.
 Tuning knobs if M1 fails: booster `thrust` (900→up if it can't climb), `ascMaxLean` constants (0.9 numerator wider), hop `cutAlt`/`hand`, carry clamps. Re-run until COMPLETE on all three: `for d in arcade realistic hardcore; do run sim:$d:0; done`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add index.html && git commit -m "feat: ascent phase — guided gravity turn, Max-Q, staging, hop missions

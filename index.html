@@ -134,6 +134,8 @@
   #tRcsL{left:calc(18px + env(safe-area-inset-left,0px));bottom:calc(112px + env(safe-area-inset-bottom,0px));width:58px;height:58px;display:none}
   #tRcsR{left:calc(86px + env(safe-area-inset-left,0px));bottom:calc(112px + env(safe-area-inset-bottom,0px));width:58px;height:58px;display:none}
   body.rcs #tRcsL,body.rcs #tRcsR{display:grid}
+  #tStage{right:calc(18px + env(safe-area-inset-right,0px));bottom:calc(132px + env(safe-area-inset-bottom,0px));width:58px;height:58px;display:none}
+  body.asc #tStage{display:grid}
   .pausemsg{font-weight:700;font-size:40px;text-align:center}
 
   /* ── phone layout ── */
@@ -161,6 +163,7 @@
     #tThr{width:104px;height:104px}
     #tLeft{left:calc(14px + env(safe-area-inset-left,0px))} #tRight{left:calc(108px + env(safe-area-inset-left,0px))}
     #tRcsL{bottom:calc(122px + env(safe-area-inset-bottom,0px))} #tRcsR{left:calc(90px + env(safe-area-inset-left,0px));bottom:calc(122px + env(safe-area-inset-bottom,0px))}
+    #tStage{bottom:calc(136px + env(safe-area-inset-bottom,0px))}
     .rstats{grid-template-columns:1fr 1fr}
     .verdict{font-size:clamp(28px,9vw,44px)} .scorebig{font-size:30px}
   }
@@ -201,6 +204,7 @@
   <div class="tbtn" id="tThr">THRUST</div>
   <div class="tbtn" id="tRcsL">RCS◄</div>
   <div class="tbtn" id="tRcsR">RCS►</div>
+  <div class="tbtn" id="tStage">STAGE</div>
 </div>
 
 <!-- MENU -->
@@ -291,8 +295,8 @@ const WORLDS={
 const ROCKETS={
   falcon9: {name:'Falcon 9',     ic:'🚀', accel:20, fuel:16, rot:80,  rotEase:7,   rcs:false, h:26, w:3.0, style:'falcon',  ds:'Balanced workhorse',
     rcsBudget:0, stages:[
-      {name:'Booster', thrust:900, dry:22, fuel:60, rate:4,    gimbal:true, canLand:true},
-      {name:'Stage 2', thrust:110, dry:4,  fuel:12, rate:0.55, gimbal:true, rcs:true}]},
+      {name:'Booster', thrust:1600, dry:22, fuel:60, rate:2.0,  gimbal:true, canLand:true},
+      {name:'Stage 2', thrust:110,  dry:4,  fuel:12, rate:0.55, gimbal:true, rcs:true}]},
   starship:{name:'Starship',     ic:'🛸', accel:17, fuel:26, rot:46,  rotEase:4.5, rcs:true,  h:36, w:4.8, style:'starship', ds:'Huge, heavy, lots of fuel, slow to turn',
     rcsBudget:8, stages:[
       {name:'Super Heavy', thrust:1600, dry:40, fuel:110, rate:7,   gimbal:true, canLand:true},
@@ -341,7 +345,7 @@ function hz(o){ return Object.assign({},H0,o); }
 const CAMPAIGN=[
  {w:'port',r:'falcon9',name:'First Flight',d:'Up, over, and down on the pad. Learn throttle and lean.',
   phases:[
-   {type:'ascent',label:'ASCENT',world:'port',rocket:'falcon9',hop:true,cutAlt:1400,hand:340},
+   {type:'ascent',label:'ASCENT',world:'port',rocket:'falcon9',hop:true,cutAlt:700,hand:300},
    {type:'land',  label:'LAND',  world:'port',terrain:'pad',rocket:'falcon9',a:340,hazards:{}}]},
  {w:'port',r:'falcon9',name:'Kármán Line',d:'Ride the full stack to space, stage on the way, survive re-entry.',
   phases:[
@@ -414,7 +418,7 @@ function bindTouch(id,flag){
   el.addEventListener('pointerdown',on); el.addEventListener('pointerup',off);
   el.addEventListener('pointerleave',off); el.addEventListener('pointercancel',off);
 }
-['#tThr:_tThr','#tLeft:_tLeft','#tRight:_tRight','#tRcsL:_tRcsL','#tRcsR:_tRcsR'].forEach(s=>{const[a,b]=s.split(':');bindTouch(a,b);});
+['#tThr:_tThr','#tLeft:_tLeft','#tRight:_tRight','#tRcsL:_tRcsL','#tRcsR:_tRcsR','#tStage:_tStage'].forEach(s=>{const[a,b]=s.split(':');bindTouch(a,b);});
 if(window.matchMedia && matchMedia('(pointer:coarse)').matches) document.body.classList.add('touch');
 
 /* ═════════════════ audio ═════════════════ */
@@ -524,7 +528,139 @@ PHASES.land={
   init(spec,carry){ landInit({...spec, carry, craft:RUN?RUN.craft:null}); },
   update(dt){ landUpdate(dt); },
   render(){ /* world rendering stays in render(); nothing extra */ },
+  hud(){ setCardLabels(['Altitude','Descent','Sideways','Tilt']); landHud(); },
 };
+
+/* ═════════════════ ASCENT PHASE ═════════════════
+   Own physics (x=downrange east, y=altitude); reuses drawRocket via the R/M proxy.
+   Sets global ppm each frame — PHASES.land.init calls resize() to restore it. */
+let A=null;
+function ascPitchTarget(y){ return clamp((y-300)/9000,0,1)*1.25; }            // rad east
+function ascMaxLean(q){ return 0.09+0.9/(0.7+q*2.2); }                        // q in normalized units
+PHASES.ascent={
+  init(spec,carry){
+    WLD=WORLDS[spec.world]; const RK=ROCKETS[spec.rocket], D=DIFFS[diff];
+    M={ g:WLD.g, rw:RK.w, rh:RK.h, style:RK.style, rcs:false, pad:30, mult:D.mult, mc:D.dc };
+    A={ spec, x:0,y:0,vx:0,vy:0, ang:0,av:0, thr:0, t:-3.2, q:0,qFrac:0, over:0,
+        ladderErr:0, ladderN:0, sep:null, stagedLate:0, apStageT:0, done:false };
+    T=null; env=null;                       // frame-1 rule: world drawing is ascent-owned
+    R={ x:0,y:0, vx:0,vy:0, angle:0, av:0, throttle:0, legs:0, exhaust:0, fuel:100 };
+    cam.bottom=-20; cam.x=0;
+    document.body.classList.remove('rcs'); document.body.classList.add('asc');
+    $('#missionTag').innerHTML='<b>'+WLD.name+'</b> · '+RK.name+' · '+RUN.m.name;
+  },
+  update(dt){
+    A.t+=dt;
+    const c=RUN.craft, s=c.stages[c.si];
+    readKeys();
+    const inp = ap!==0 ? this.ap(dt) : {thr:input.thr,left:input.left,right:input.right};
+    if(A.t<0){ A.thr=lerp(A.thr, A.t>-0.6?1:0, clamp(dt*6,0,1)); R.exhaust=A.thr; this.sync(); return; }  // countdown: engines light, clamps hold
+    A.thr=lerp(A.thr, inp.thr?1:0, clamp(dt*9,0,1)); if(s.fuel<=0) A.thr=0;
+    const rotIn=(inp.right?1:0)-(inp.left?1:0);
+    A.av=lerp(A.av, rotIn*55/DEG, clamp(dt*5,0,1)); A.ang=clamp(A.ang+A.av*dt,-1.45,1.45);
+    if(DIFFS[diff].autoLevel&&rotIn===0) A.ang=lerp(A.ang,ascPitchTarget(A.y),clamp(dt*0.5,0,1));  // arcade nudge
+    const acc=craftAccel(c,A.thr); burnStage(c,A.thr,dt);
+    const rho=WLD.atmoTop?Math.exp(-A.y/(WLD.atmoTop*0.33)):0, sp=Math.hypot(A.vx,A.vy);
+    A.q=rho*sp*sp/1000; A.qFrac=clamp(Math.abs(A.ang)/ascMaxLean(A.q),0,1.3);
+    const drag=0.012*rho*sp;
+    let ax=acc*Math.sin(A.ang)-drag*A.vx, ay=acc*Math.cos(A.ang)-M.g-drag*A.vy;
+    if(A.t<0.4&&A.vy<0){ ay=Math.max(ay,0); }                                  // pad holds you
+    A.vx+=ax*dt; A.vy+=ay*dt; A.x+=A.vx*dt; A.y=Math.max(0,A.y+A.vy*dt);
+    // ladder adherence (scored)
+    A.ladderErr+=Math.abs(A.ang-ascPitchTarget(A.y)); A.ladderN++;
+    // Max-Q structural envelope
+    if(A.y>40&&Math.abs(A.ang)>ascMaxLean(A.q)*(diff==='arcade'?1.5:diff==='hardcore'?0.85:1))
+         A.over+=dt; else A.over=Math.max(0,A.over-dt*0.7);
+    if(A.over>1.1){ this.sync(); explode(); shake=1.4; sndBoom();
+      phaseDone({fail:'BREAKUP',reason:'Aerodynamic stress tore the rocket apart',score:0}); return; }
+    // staging (Space / STAGE btn); spent stage becomes a prop
+    if((keys[' ']||input._tStage)&&s.fuel<=0&&canStage(c)){ keys[' ']=false; input._tStage=0; ascDoStage(); }
+    if(s.fuel<=0&&canStage(c)) A.stagedLate+=dt;
+    if(A.sep){ const p=A.sep; p.t+=dt; p.vy-=M.g*0.6*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.rot+=p.vr*dt; if(p.t>5) A.sep=null; }
+    // engine particles (reuse landing flame look)
+    if(A.thr>0.05&&s.fuel>0){ const dx=Math.sin(A.ang),dy=Math.cos(A.ang);
+      for(let i=0;i<2;i++){ const v=rnd(8,16)*A.thr;
+        particles.push({x:A.x-dx*2,y:A.y-dy*2,vx:-dx*v+rnd(-3,3),vy:-dy*v+rnd(-2,2),life:rnd(.3,.6),t:0,size:rnd(1.2,2.4),kind:'flame'}); } }
+    setThrustSound(A.thr*(s.fuel>0?1:0)); stepParticles(dt); shake=Math.max(0,shake-dt*3);
+    this.sync();
+    // exits
+    const cur=c.stages[c.si];
+    if(A.spec.hop){
+      if(A.y>=A.spec.cutAlt) A.thr=Math.min(A.thr,0);                          // MECO: coast over the top
+      if(A.vy<0&&A.y<=A.spec.hand){
+        phaseDone({verdict:'OK',score:this.scoreIt(),carry:{xOff:clamp(A.x*0.15,-60,60),vx:clamp(A.vx,-18,18),vy:clamp(A.vy,-46,-8)}}); return; }
+      if(A.vy<0&&cur.fuel<=0&&!canStage(c)&&A.y>A.spec.hand+400){}             // gliding down dry is fine — land phase decides fate
+    } else {
+      if(A.y>=A.spec.cutAlt){
+        phaseDone({verdict:'OK',score:this.scoreIt(),carry:{v:Math.hypot(A.vx,A.vy)}}); return; }
+      if(cur.fuel<=0&&!canStage(c)&&A.vy<0){                                   // under-performance → emergency entry (spec §4.1)
+        phaseDone({verdict:'SHORT',score:Math.round(this.scoreIt()*0.4),carry:{v:Math.hypot(A.vx,A.vy)*0.8,emergency:true}}); return; }
+    }
+  },
+  sync(){ const s=RUN.craft.stages[RUN.craft.si];
+    R.x=A.x; R.y=A.y; R.angle=A.ang; R.exhaust=A.thr*(s.fuel>0?1:0); R.legs=0; R.fuel=100*s.fuel/s.fuel0;
+    ppm=H/(VIS*(1+A.y/260)); cam.bottom=lerp(cam.bottom,A.y-0.45*H/ppm,clamp(0.08,0,1)); cam.x=lerp(cam.x,A.x,0.08); },
+  scoreIt(){ const c=RUN.craft, fuelFrac=c.stages[c.si].fuel/c.stages[c.si].fuel0;
+    const ladder=clamp(1-(A.ladderErr/Math.max(1,A.ladderN))/0.5,0,1);
+    const crisp=clamp(1-A.stagedLate/4,0,1);
+    return Math.round((fuelFrac*500+ladder*550+crisp*150)*M.mult); },
+  ap(dt){ const out={thr:1,left:0,right:0}, c=RUN.craft, s=c.stages[c.si];
+    const tgt=ascPitchTarget(A.y), pred=A.ang+A.av/5;
+    if(tgt-pred>0.015) out.right=1; else if(tgt-pred<-0.015) out.left=1;
+    if(A.spec.hop){ if(A.y>=A.spec.cutAlt||A.vy<0) out.thr=0; }   // hop: single stage, coast once climbing stops — save fuel to land
+    else if(s.fuel<=0&&canStage(c)){ A.apStageT+=dt; if(A.apStageT>0.6){ ascDoStage(); A.apStageT=0; } }
+    return out; },
+  render(){ ascRender(); },
+  hud(){ const s=RUN.craft.stages[RUN.craft.si];
+    setCardLabels(['Altitude','Speed','Pitch','Max-Q']);
+    const vs=$$('.tele .tcard .v');
+    vs[0].innerHTML=A.y<1000?Math.round(A.y)+'<small> m</small>':(A.y/1000).toFixed(1)+'<small> km</small>'; vs[0].style.color='var(--ink)';
+    vs[1].innerHTML=Math.round(Math.hypot(A.vx,A.vy))+'<small> m/s</small>'; vs[1].style.color='var(--ink)';
+    vs[2].innerHTML=Math.round(A.ang*DEG)+'<small>°</small>';
+    vs[2].style.color=Math.abs(A.ang-ascPitchTarget(A.y))>0.18?'var(--gold)':'var(--green)';
+    vs[3].innerHTML=Math.round(A.qFrac*100)+'<small>%</small>';
+    vs[3].style.color=A.qFrac>0.95?'var(--red)':A.qFrac>0.65?'var(--gold)':'var(--ink)';
+    $('#fuelFill').style.width=(100*s.fuel/s.fuel0)+'%'; $('#fuelTxt').textContent=Math.round(100*s.fuel/s.fuel0)+'%';
+    $('#fuelFill').style.background=s.fuel/s.fuel0<0.2?'linear-gradient(90deg,#7a2f2f,var(--red))':'linear-gradient(90deg,#2f6f4a,var(--green))';
+    $('#thrFill').style.width=(A.thr*100)+'%'; $('#thrTxt').textContent=Math.round(A.thr*100)+'%';
+    const apP=$('#apPanel');
+    if(ap!==0){ apP.classList.add('on'); $('#apState').textContent=AP_NAMES[ap];
+      $('#apState').className='apState '+(ap===1?'auto':'assist');
+      $('#apPhaseEl').textContent=(RUN.craft.stages[RUN.craft.si].fuel<=0&&canStage(RUN.craft))?'STAGE!':'ASCENT GUIDANCE';
+      $('#apTgtEl').innerHTML='pitch '+Math.round(ascPitchTarget(A.y)*DEG)+'° <small>vs</small> '+Math.round(A.ang*DEG)+'°'; }
+    else apP.classList.remove('on'); },
+};
+function ascDoStage(){ const c=RUN.craft;
+  A.sep={x:A.x-Math.sin(A.ang)*2,y:A.y-Math.cos(A.ang)*2,vx:A.vx*0.9-3,vy:A.vy*0.85-3,rot:A.ang,vr:rnd(-1.2,1.2),t:0,w:M.rw,h:M.rh*0.55};
+  doStage(c); M.rh=ROCKETS[c.rk].h*0.55; M.rw=ROCKETS[c.rk].w*0.8;
+  blip(110,0.3,'square',0.32); shake=Math.max(shake,0.55);
+  for(let i=0;i<16;i++) particles.push({x:A.x,y:A.y-2,vx:rnd(-8,8),vy:rnd(-6,2),life:rnd(.3,.8),t:0,size:rnd(1.5,3),kind:'spark'});
+}
+function ascRender(){
+  // darken sky with altitude; stars fade in above half-atmosphere
+  const k=WLD.atmoTop?clamp(A.y/WLD.atmoTop,0,1):1;
+  ctx.fillStyle='rgba(2,3,8,'+(k*0.92)+')'; ctx.fillRect(-40,-40,W+80,H+80);
+  if(k>0.45){ ctx.globalAlpha=(k-0.45)/0.55; drawStars(); ctx.globalAlpha=1; }
+  // ground + pad while still in view
+  const gY=sy(0);
+  if(gY<H+60){ ctx.fillStyle=WLD.ground; ctx.fillRect(-40,gY,W+80,H-gY+80);
+    const px=sx(0); ctx.fillStyle='rgba(20,28,44,.9)'; ctx.fillRect(px-15*ppm,gY,30*ppm,Math.max(3,1.4*ppm));
+    ctx.fillStyle='#e8c24a'; for(let x=px-15*ppm;x<px+15*ppm;x+=13) ctx.fillRect(x,gY,6,3);
+    ctx.strokeStyle='#3a4866'; ctx.lineWidth=Math.max(2,ppm*1.2);                       // gantry tower
+    ctx.beginPath(); ctx.moveTo(px-8*ppm,gY); ctx.lineTo(px-8*ppm,gY-26*ppm); ctx.stroke(); }
+  // spent stage prop
+  if(A.sep){ const p=A.sep; ctx.save(); ctx.translate(sx(p.x),sy(p.y)); ctx.rotate(p.rot);
+    ctx.fillStyle='#aab3c6'; ctx.fillRect(-p.w*ppm/2,-p.h*ppm,p.w*ppm,p.h*ppm); ctx.restore();
+    if(Math.random()<0.5) particles.push({x:p.x,y:p.y,vx:rnd(-2,2),vy:rnd(-2,2),life:rnd(.4,1),t:0,size:rnd(1,2.5),kind:'spray'}); }
+  drawParticles(); drawRocket();
+  // pitch ladder ghost (same visual language as the AP lean ghost)
+  if(gameState==='play'){ ctx.save(); ctx.translate(sx(A.x),sy(A.y)); ctx.rotate(ascPitchTarget(A.y));
+    ctx.setLineDash([3,5]); ctx.strokeStyle='rgba(92,200,255,.65)'; ctx.lineWidth=1.6;
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,-M.rh*ppm*1.5); ctx.stroke(); ctx.restore(); }
+  // countdown numerals
+  if(A.t<0){ ctx.fillStyle='rgba(234,240,255,.92)'; ctx.font='800 64px Outfit';
+    ctx.textAlign='center'; ctx.fillText(Math.ceil(-A.t),W/2,H*0.3); ctx.textAlign='left'; }
+}
 
 /* ═════════════════ AUTOPILOT (feedback / PID-style) ═════════════════
    Reads only HUD-visible state; outputs the same binary controls as the player. */
@@ -710,7 +846,7 @@ function endAttempt(verdict,info){
   showReport(verdict,info,score,isBest,success,byAuto);
 }
 function endMission(failRes){
-  gameState='result'; setThrustSound(0);
+  gameState='result'; setThrustSound(0); document.body.classList.remove('asc');
   const fail=failRes&&failRes.fail, byAuto=ap!==0;
   const verdict=fail||((RUN.results.every(r=>r.verdict==='PERFECT'))?'PERFECT':'COMPLETE');
   const score=fail?0:Math.round(RUN.score*(1+RUN.idx*0.07));
@@ -740,9 +876,12 @@ function render(){
   ctx.save();
   if(shake>0) ctx.translate(rnd(-1,1)*shake*7,rnd(-1,1)*shake*7);
   drawSkyWorld(); if(WLD.stars) drawStars(); drawCelestial();
-  if(env) drawTerrain();   // T/env exist only once a run has started — menu has none
-  if(gameState==='play'||gameState==='result'){ drawParticles(); if(R) drawRocket(); }
-  if(gameState==='play') drawGuides();
+  if(RUN&&PH&&PH!==PHASES.land){ PH.render(); }   // ascent/entry draw their own world
+  else {
+    if(env) drawTerrain();   // T/env exist only once a run has started — menu has none
+    if(gameState==='play'||gameState==='result'){ drawParticles(); if(R) drawRocket(); }
+    if(gameState==='play'&&env) drawGuides();
+  }
   if(WLD.haze||MS.dust||MS.fog) drawAtmosphere();
   if(TRANS){ const k=Math.min(1,TRANS.t/0.4), k2=TRANS.t>TRANS.dur-0.4?(TRANS.dur-TRANS.t)/0.4:1;
     ctx.globalAlpha=Math.min(k,k2)*0.85; ctx.fillStyle='#04070f'; ctx.fillRect(0,0,W,H);
@@ -909,6 +1048,11 @@ function drawGuides(){
 /* ═════════════════ HUD ═════════════════ */
 function updateHUD(){
   if(gameState!=='play') return;
+  if(RUN&&PH&&PH.hud){ PH.hud(); return; }
+  setCardLabels(['Altitude','Descent','Sideways','Tilt']); landHud();
+}
+function setCardLabels(l){ $$('.tele .tcard .k').forEach((k,i)=>k.textContent=l[i]); }
+function landHud(){
   const alt=Math.max(0,R.y-env.deckY),vy=-R.vy,vx=R.vx,tilt=R.angle*DEG;
   $('#hAlt').innerHTML=Math.round(alt)+'<small> m</small>';
   const e1=$('#hVy'); e1.innerHTML=(vy>=0?'':'+')+Math.abs(vy).toFixed(1)+'<small> m/s</small>'; e1.style.color=vy>M.vMax*1.05?'var(--red)':vy>M.vMax*0.6?'var(--gold)':'var(--green)';
@@ -1024,12 +1168,12 @@ T_('craft: mass stacks stages', ()=>{
 T_('craft: accel rises as fuel burns', ()=>{
   const c=mkCraft('falcon9'); const a0=craftAccel(c,1);
   c.stages[0].fuel=10; const a1=craftAccel(c,1);
-  ok(a1>a0,'lighter = faster'); near(a0, 900/98, 1e-6);
+  ok(a1>a0,'lighter = faster'); near(a0, 1600/98, 1e-6);
 });
 T_('craft: burn consumes, clamps at 0, cuts thrust', ()=>{
   const c=mkCraft('falcon9'); c.stages[0].fuel=1;
   eq(craftAccel(c,0),0,'zero thr zero accel');
-  burnStage(c,1,2);           // rate 4 → wants 8, clamps to 1
+  burnStage(c,1,2);           // rate 2 → wants 4, clamps to 1
   eq(c.stages[0].fuel,0); eq(craftAccel(c,1),0,'no fuel no thrust');
 });
 T_('craft: staging drops mass, TWR jumps', ()=>{
@@ -1062,6 +1206,16 @@ T_('phases: fail short-circuits', ()=>{
   eq(log.length,0,'next phase never inits'); eq(RUN.failv,'BREAKUP');
   _missionReportHook=null;
   RUN=null; PH=null;
+});
+T_('ascent: pitch ladder is 0 on the pad, eastward and capped high up', ()=>{
+  near(ascPitchTarget(0),0,1e-9); near(ascPitchTarget(200),0,1e-9,'vertical to 300m');
+  ok(ascPitchTarget(3000)>0.2,'leans east'); ok(ascPitchTarget(99000)<=1.25+1e-9,'capped');
+  ok(ascPitchTarget(6000)>ascPitchTarget(2000),'monotonic');
+});
+T_('ascent: Max-Q envelope narrows with q then relaxes', ()=>{
+  ok(ascMaxLean(0)>1.0,'thin air = free');
+  ok(ascMaxLean(2.0)<0.45,'thick+fast = tight');
+  ok(ascMaxLean(0.2)>ascMaxLean(2.0));
 });
 (function(){ const p=location.hash.replace('#','').toLowerCase().split(':');
   if(p[0]==='test'){ runTests(); return; }
