@@ -778,7 +778,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Files:** Modify `index.html`: new section after the ascent block; TESTS block.
 
-- [ ] **Step 1: Failing test** (append):
+- [x] **Step 1: Failing test** (append):
 
 ```js
 T_('entry: cone drifts inside ±0.75 and is finite', ()=>{
@@ -786,9 +786,9 @@ T_('entry: cone drifts inside ±0.75 and is finite', ()=>{
 });
 ```
 
-- [ ] **Step 2: Run, verify FAIL** — `run test` → `TESTS FAIL 1/10 :: entry: … entryCone is not defined`.
+- [x] **Step 2: Run, verify FAIL** — `run test` → `TESTS FAIL 1/10 :: entry: … entryCone is not defined`.
 
-- [ ] **Step 3: Implement:**
+- [x] **Step 3: Implement:**
 
 ```js
 /* ═════════════════ ENTRY PHASE ═════════════════ */
@@ -871,13 +871,13 @@ PHASES.entry={
 };
 ```
 
-- [ ] **Step 4: Run tests + the M2 mission end-to-end**
+- [x] **Step 4: Run tests + the M2 mission end-to-end**
 
 `run test` → `TESTS PASS 10/10`.
 `for d in arcade realistic hardcore; do run sim:$d:1; done` → each `RESULT COMPLETE AUTO M2 score=… phases=OK,CLEAN|HOT,…` (no TIMEOUT/fail).
 Tuning knobs: `E.w` widths, heat rates (0.32/0.22), v-decay constants, AP deadband 0.03.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add index.html && git commit -m "feat: re-entry phase — corridor hold, heat, G readout, carry into landing

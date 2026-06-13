@@ -295,8 +295,8 @@ const WORLDS={
 const ROCKETS={
   falcon9: {name:'Falcon 9',     ic:'🚀', accel:20, fuel:16, rot:80,  rotEase:7,   rcs:false, h:26, w:3.0, style:'falcon',  ds:'Balanced workhorse',
     rcsBudget:0, stages:[
-      {name:'Booster', thrust:1600, dry:22, fuel:60, rate:2.0,  gimbal:true, canLand:true},
-      {name:'Stage 2', thrust:110,  dry:4,  fuel:12, rate:0.55, gimbal:true, rcs:true}]},
+      {name:'Booster', thrust:2400, dry:22, fuel:120, rate:2.0,  gimbal:true, canLand:true},
+      {name:'Stage 2', thrust:110,  dry:4,  fuel:12,  rate:0.55, gimbal:true, rcs:true}]},
   starship:{name:'Starship',     ic:'🛸', accel:17, fuel:26, rot:46,  rotEase:4.5, rcs:true,  h:36, w:4.8, style:'starship', ds:'Huge, heavy, lots of fuel, slow to turn',
     rcsBudget:8, stages:[
       {name:'Super Heavy', thrust:1600, dry:40, fuel:110, rate:7,   gimbal:true, canLand:true},
@@ -534,7 +534,7 @@ PHASES.land={
 /* ═════════════════ ASCENT PHASE ═════════════════
    Own physics (x=downrange east, y=altitude); reuses drawRocket via the R/M proxy.
    Sets global ppm each frame — PHASES.land.init calls resize() to restore it. */
-let A=null;
+let A=null, ascDragK=0.0005;                                                 // drag accel = ascDragK·ρ·speed·v (terminal-velocity knob)
 function ascPitchTarget(y){ return clamp((y-300)/9000,0,1)*1.25; }            // rad east
 function ascMaxLean(q){ return 0.09+0.9/(0.7+q*2.2); }                        // q in normalized units
 PHASES.ascent={
@@ -558,11 +558,12 @@ PHASES.ascent={
     A.thr=lerp(A.thr, inp.thr?1:0, clamp(dt*9,0,1)); if(s.fuel<=0) A.thr=0;
     const rotIn=(inp.right?1:0)-(inp.left?1:0);
     A.av=lerp(A.av, rotIn*55/DEG, clamp(dt*5,0,1)); A.ang=clamp(A.ang+A.av*dt,-1.45,1.45);
-    if(DIFFS[diff].autoLevel&&rotIn===0) A.ang=lerp(A.ang,ascPitchTarget(A.y),clamp(dt*0.5,0,1));  // arcade nudge
+    if(DIFFS[diff].autoLevel&&rotIn===0){ const lim=ascMaxLean(A.q)*1.1;        // arcade nudge — still respect Max-Q
+      A.ang=lerp(A.ang,clamp(ascPitchTarget(A.y),-lim,lim),clamp(dt*0.5,0,1)); }
     const acc=craftAccel(c,A.thr); burnStage(c,A.thr,dt);
     const rho=WLD.atmoTop?Math.exp(-A.y/(WLD.atmoTop*0.33)):0, sp=Math.hypot(A.vx,A.vy);
     A.q=rho*sp*sp/1000; A.qFrac=clamp(Math.abs(A.ang)/ascMaxLean(A.q),0,1.3);
-    const drag=0.012*rho*sp;
+    const drag=ascDragK*rho*sp;
     let ax=acc*Math.sin(A.ang)-drag*A.vx, ay=acc*Math.cos(A.ang)-M.g-drag*A.vy;
     if(A.t<0.4&&A.vy<0){ ay=Math.max(ay,0); }                                  // pad holds you
     A.vx+=ax*dt; A.vy+=ay*dt; A.x+=A.vx*dt; A.y=Math.max(0,A.y+A.vy*dt);
@@ -605,7 +606,9 @@ PHASES.ascent={
     const crisp=clamp(1-A.stagedLate/4,0,1);
     return Math.round((fuelFrac*500+ladder*550+crisp*150)*M.mult); },
   ap(dt){ const out={thr:1,left:0,right:0}, c=RUN.craft, s=c.stages[c.si];
-    const tgt=ascPitchTarget(A.y), pred=A.ang+A.av/5;
+    const envMul=diff==='arcade'?1.5:diff==='hardcore'?0.85:1;                  // same envelope the breakup check uses
+    const lim=ascMaxLean(A.q)*envMul*0.65;                   // stay well inside it — leave room for angular overshoot
+    const tgt=clamp(ascPitchTarget(A.y),-lim,lim), pred=A.ang+A.av/5;
     if(tgt-pred>0.015) out.right=1; else if(tgt-pred<-0.015) out.left=1;
     if(A.spec.hop){ if(A.y>=A.spec.cutAlt||A.vy<0) out.thr=0; }   // hop: single stage, coast once climbing stops — save fuel to land
     else if(s.fuel<=0&&canStage(c)){ A.apStageT+=dt; if(A.apStageT>0.6){ ascDoStage(); A.apStageT=0; } }
@@ -661,6 +664,87 @@ function ascRender(){
   if(A.t<0){ ctx.fillStyle='rgba(234,240,255,.92)'; ctx.font='800 64px Outfit';
     ctx.textAlign='center'; ctx.fillText(Math.ceil(-A.t),W/2,H*0.3); ctx.textAlign='left'; }
 }
+
+/* ═════════════════ ENTRY PHASE ═════════════════
+   Side view, fixed close frame. Hold attitude inside a drifting safe cone;
+   straying heats the shield. Exit speed/accuracy seed the landing carry. */
+let E=null;
+function entryCone(t,ph){ return 0.42*Math.sin(t*0.55+ph)+0.22*Math.sin(t*1.45+ph*1.7); }
+PHASES.entry={
+  init(spec,carry){
+    WLD=WORLDS[spec.world]; T=null; env=null;
+    const D=DIFFS[diff];
+    E={ spec, v:clamp(carry.v||160,90,240), ang:0, ph:rnd(0,TAU), t:0, heat:0, peak:0, g:0,
+        emergency:!!carry.emergency, w:(diff==='arcade'?0.34:diff==='hardcore'?0.2:0.27), errAcc:0, errN:0 };
+    M={...M, mult:D.mult};
+    R={x:0,y:0,vx:0,vy:0,angle:0,av:0,throttle:0,legs:0,exhaust:0,fuel:R?R.fuel:100};
+    cam.bottom=0; cam.x=0; document.body.classList.remove('asc');
+  },
+  update(dt){
+    E.t+=dt; readKeys();
+    const inp = ap!==0 ? this.ap(dt) : {left:input.left,right:input.right};
+    E.ang=clamp(E.ang+((inp.right?1:0)-(inp.left?1:0))*1.1*dt,-0.9,0.9);
+    const cone=entryCone(E.t,E.ph), err=Math.abs(E.ang-cone);
+    E.errAcc+=err; E.errN++;
+    const vPrev=E.v;
+    E.v=Math.max(42,E.v-(14+E.v*0.09)*dt);
+    E.g=(vPrev-E.v)/dt/9.8;
+    if(err>E.w) E.heat+=dt*(0.32+E.v/240*0.5); else E.heat=Math.max(0,E.heat-dt*0.22);
+    E.peak=Math.max(E.peak,E.heat);
+    if(E.spec.gMax&&E.g>E.spec.gMax){ E.heat+=dt*0.5; }       // crewed: pulling too hard also cooks the envelope
+    if(E.heat>=1){ explode(); shake=1.4; sndBoom();
+      phaseDone({fail:'BURNUP',reason:'Lost the entry corridor — vehicle burned up',score:0}); return; }
+    if(E.v<=45){
+      const sl=clamp(E.errAcc/Math.max(1,E.errN)/E.w,0,1.6);
+      phaseDone({verdict:E.peak<0.25?'CLEAN':'HOT', score:Math.round((1-clamp(E.peak,0,1))*600*M.mult),
+        carry:{xOff:clamp(sl*(Math.random()<.5?-1:1)*110,-110,110)*(E.emergency?1.2:1),
+               vx:clamp(sl*14,-16,16)*(Math.random()<.5?-1:1), vy:-34}}); return; }
+    setThrustSound(0); shake=clamp(E.heat*0.7,0,0.8); stepParticles(dt);
+    if(Math.random()<0.7) particles.push({x:rnd(-1,1)*2,y:rnd(-1,1)*2,vx:-Math.sin(E.ang)*30+rnd(-8,8),vy:18+rnd(-4,4),life:rnd(.2,.5),t:0,size:rnd(1.5,3.2),kind:'flame'});
+  },
+  ap(dt){ const out={left:0,right:0}; const cone=entryCone(E.t,E.ph), pred=E.ang;
+    if(cone-pred>0.03) out.right=1; else if(cone-pred<-0.03) out.left=1; return out; },
+  render(){
+    ctx.fillStyle='rgba(2,3,8,0.9)'; ctx.fillRect(-40,-40,W+80,H+80);
+    ctx.globalAlpha=0.8; drawStars(); ctx.globalAlpha=1;
+    const limbY=H*0.86;                                       // planet limb glow at the bottom
+    const g=ctx.createLinearGradient(0,limbY-80,0,H); g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,WLD.sky[1]);
+    ctx.fillStyle=g; ctx.fillRect(0,limbY-80,W,H-limbY+80);
+    ppm=H/240; cam.bottom=-120; cam.x=0;                      // fixed close frame
+    ctx.save(); ctx.translate(W/2,H*0.42); ctx.rotate(E.ang);
+    const hw=M.rw*ppm*0.5, hh=M.rh*ppm*0.55;                  // capsule/stage silhouette + plasma sheath
+    ctx.fillStyle='#cfd6e4'; roundRect(-hw,-hh,hw*2,hh,hw*0.6); ctx.fill();
+    const pl=ctx.createRadialGradient(0,hh*0.4,2,0,hh*0.4,hh*2.2);
+    pl.addColorStop(0,'rgba(255,200,120,'+(0.25+E.heat*0.7)+')'); pl.addColorStop(1,'rgba(255,90,40,0)');
+    ctx.fillStyle=pl; ctx.beginPath(); ctx.arc(0,hh*0.4,hh*2.2,0,TAU); ctx.fill();
+    ctx.restore();
+    drawParticles();
+    // corridor cone indicator
+    const cone=entryCone(E.t,E.ph);
+    ctx.save(); ctx.translate(W/2,H*0.42);
+    for(const s of[-1,1]){ ctx.save(); ctx.rotate(cone+s*E.w);
+      ctx.strokeStyle='rgba(92,200,255,.5)'; ctx.setLineDash([4,7]); ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.moveTo(0,-20); ctx.lineTo(0,-H*0.3); ctx.stroke(); ctx.restore(); }
+    ctx.restore();
+  },
+  hud(){
+    setCardLabels(['Speed','Heat','G-Force','Corridor']);
+    const vs=$$('.tele .tcard .v');
+    vs[0].innerHTML=Math.round(E.v*28)+'<small> km/h</small>'; vs[0].style.color='var(--ink)';
+    vs[1].innerHTML=Math.round(E.heat*100)+'<small>%</small>';
+    vs[1].style.color=E.heat>0.7?'var(--red)':E.heat>0.4?'var(--gold)':'var(--green)';
+    vs[2].innerHTML=E.g.toFixed(1)+'<small> g</small>';
+    vs[2].style.color=(E.spec.gMax&&E.g>E.spec.gMax)?'var(--red)':'var(--ink)';
+    const err=Math.abs(E.ang-entryCone(E.t,E.ph));
+    vs[3].innerHTML=(err<E.w?'IN':'OUT'); vs[3].style.color=err<E.w?'var(--green)':'var(--red)';
+    $('#fuelFill').style.width=R.fuel+'%'; $('#fuelTxt').textContent=Math.round(R.fuel)+'%';
+    $('#thrFill').style.width='0%'; $('#thrTxt').textContent='—';
+    const apP=$('#apPanel');
+    if(ap!==0){ apP.classList.add('on'); $('#apState').textContent=AP_NAMES[ap];
+      $('#apState').className='apState '+(ap===1?'auto':'assist');
+      $('#apPhaseEl').textContent='HOLDING CORRIDOR'; $('#apTgtEl').innerHTML='heat '+Math.round(E.heat*100)+'%'; }
+    else apP.classList.remove('on'); },
+};
 
 /* ═════════════════ AUTOPILOT (feedback / PID-style) ═════════════════
    Reads only HUD-visible state; outputs the same binary controls as the player. */
@@ -1162,13 +1246,13 @@ function runTests(){ let fails=[];
 T_('harness sanity', ()=>{ eq(1+1,2); near(0.1+0.2,0.3,1e-9); ok(clamp(5,0,3)===3); });
 T_('craft: mass stacks stages', ()=>{
   const c=mkCraft('falcon9');
-  near(craftMass(c), 22+60+(4+12), 1e-9, 'wet mass incl upper stage');
+  near(craftMass(c), 22+120+(4+12), 1e-9, 'wet mass incl upper stage');
   near(stagesAbove(mkCraft('hopper'),0),0,1e-9,'single stage above=0');
 });
 T_('craft: accel rises as fuel burns', ()=>{
   const c=mkCraft('falcon9'); const a0=craftAccel(c,1);
   c.stages[0].fuel=10; const a1=craftAccel(c,1);
-  ok(a1>a0,'lighter = faster'); near(a0, 1600/98, 1e-6);
+  ok(a1>a0,'lighter = faster'); near(a0, 2400/158, 1e-6);
 });
 T_('craft: burn consumes, clamps at 0, cuts thrust', ()=>{
   const c=mkCraft('falcon9'); c.stages[0].fuel=1;
@@ -1216,6 +1300,9 @@ T_('ascent: Max-Q envelope narrows with q then relaxes', ()=>{
   ok(ascMaxLean(0)>1.0,'thin air = free');
   ok(ascMaxLean(2.0)<0.45,'thick+fast = tight');
   ok(ascMaxLean(0.2)>ascMaxLean(2.0));
+});
+T_('entry: cone drifts inside ±0.75 and is finite', ()=>{
+  for(let t=0;t<30;t+=0.37){ const c=entryCone(t,1.234); ok(isFinite(c)&&Math.abs(c)<=0.75,'t='+t); }
 });
 (function(){ const p=location.hash.replace('#','').toLowerCase().split(':');
   if(p[0]==='test'){ runTests(); return; }
