@@ -56,7 +56,7 @@ Within-file boundaries (treat as modules): a phase object touches only its own s
 
 **Files:** Modify `index.html` (immediately before the hash-mode IIFE at the bottom, line ~897).
 
-- [ ] **Step 1: Add the harness + a self-test**
+- [x] **Step 1: Add the harness + a self-test**
 
 Insert before the `(function(){ const p=location.hash...` IIFE:
 
@@ -74,7 +74,7 @@ function runTests(){ let fails=[];
 T_('harness sanity', ()=>{ eq(1+1,2); near(0.1+0.2,0.3,1e-9); ok(clamp(5,0,3)===3); });
 ```
 
-- [ ] **Step 2: Wire `#test` into the hash IIFE**
+- [x] **Step 2: Wire `#test` into the hash IIFE**
 
 In the IIFE, change the first line of the handler:
 
@@ -86,7 +86,7 @@ In the IIFE, change the first line of the handler:
 
 (only the `if(p[0]==='test')` line is new; the rest stays.)
 
-- [ ] **Step 3: Run and verify PASS**
+- [x] **Step 3: Run and verify PASS**
 
 Run: `run test`
 Expected: `<title>TESTS PASS 1/1</title>`
@@ -94,7 +94,7 @@ Expected: `<title>TESTS PASS 1/1</title>`
 Also verify the game still loads clean with no hash (frame-1 rule):
 `run "" ` → expected `<title>Booster — Rocket Landing</title>` (no RESULT/TESTS text).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add index.html && git commit -m "test: in-page #test assertion harness
@@ -108,7 +108,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Files:** Modify `index.html` — new section after the `ROCKETS` table (~line 297); tests appended to the TESTS block.
 
-- [ ] **Step 1: Write failing tests** (append to TESTS block)
+- [x] **Step 1: Write failing tests** (append to TESTS block)
 
 ```js
 T_('craft: mass stacks stages', ()=>{
@@ -133,12 +133,12 @@ T_('craft: staging drops mass, TWR jumps', ()=>{
 });
 ```
 
-- [ ] **Step 2: Run, verify FAIL**
+- [x] **Step 2: Run, verify FAIL**
 
 Run: `run test`
 Expected: `TESTS FAIL 4/5 :: craft: mass stacks stages — mkCraft is not defined` (message may vary; FAIL count 4).
 
-- [ ] **Step 3: Implement** — insert after the ROCKETS table:
+- [x] **Step 3: Implement** — insert after the ROCKETS table:
 
 ```js
 /* ═════════════════ CRAFT (multistage state) ═════════════════
@@ -154,7 +154,7 @@ function canStage(c){ return c.si<c.stages.length-1; }
 function doStage(c){ if(!canStage(c)) return false; c.si++; return true; }
 ```
 
-- [ ] **Step 4: Add stage data to ROCKETS** (same edit). Extend each rocket object with `stages` + `rcsBudget` (legacy fields stay — Practice mode still uses them):
+- [x] **Step 4: Add stage data to ROCKETS** (same edit). Extend each rocket object with `stages` + `rcsBudget` (legacy fields stay — Practice mode still uses them):
 
 ```js
 // inside ROCKETS, add per rocket (keep existing fields):
@@ -174,11 +174,11 @@ lander:   {... , rcsBudget:10, stages:[
   {name:'Ascent',  thrust:16, dry:2.2,fuel:5,  rate:0.4, gimbal:true, rcs:true}]},
 ```
 
-- [ ] **Step 5: Run, verify PASS**
+- [x] **Step 5: Run, verify PASS**
 
 Run: `run test` → Expected: `TESTS PASS 5/5`. Also `run sim:realistic:0` → still `RESULT GOOD AUTO …` (legacy landing untouched).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add index.html && git commit -m "feat: multistage craft model + stage data (TDD)
@@ -192,7 +192,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Files:** Modify `index.html` — new section after `buildTerrain` (~line 451); tests appended.
 
-- [ ] **Step 1: Write failing tests** (append to TESTS block)
+- [x] **Step 1: Write failing tests** (append to TESTS block)
 
 ```js
 T_('phases: chain runs to completion', ()=>{
@@ -220,9 +220,9 @@ T_('phases: fail short-circuits', ()=>{
 });
 ```
 
-- [ ] **Step 2: Run, verify FAIL** — `run test` → `TESTS FAIL 2/7 :: phases: … PHASES is not defined`.
+- [x] **Step 2: Run, verify FAIL** — `run test` → `TESTS FAIL 2/7 :: phases: … PHASES is not defined`.
 
-- [ ] **Step 3: Implement the engine** — insert after `buildTerrain`:
+- [x] **Step 3: Implement the engine** — insert after `buildTerrain`:
 
 ```js
 /* ═════════════════ PHASE ENGINE ═════════════════
@@ -259,9 +259,9 @@ function missionReport(failRes){
 }
 ```
 
-- [ ] **Step 4: Run, verify PASS** — `run test` → `TESTS PASS 7/7`. (`endMission` is not called by tests; it may not exist yet — JS only resolves it at call time.)
+- [x] **Step 4: Run, verify PASS** — `run test` → `TESTS PASS 7/7`. (`endMission` is not called by tests; it may not exist yet — JS only resolves it at call time.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add index.html && git commit -m "feat: mission phase engine (RUN/PHASES/phaseDone/transitions)
@@ -277,7 +277,7 @@ This is the load-bearing refactor. Behaviour of landing flying must not change �
 
 **Files:** Modify `index.html`: `startGame` (~452–477), `update` (~534), `render`/`drawGuides` path, `loop` (~893), report (~828), menu (~849–890), persistence (~337), hash IIFE.
 
-- [ ] **Step 1: Record the BEFORE regression baseline**
+- [x] **Step 1: Record the BEFORE regression baseline**
 
 ```bash
 for t in pad ship platform mountains tower; do echo "== $t"; run sim:realistic:3; done > /tmp/before.txt 2>&1   # old campaign idx 3 = ship; plus:
@@ -287,7 +287,7 @@ cat /tmp/before.txt
 
 Save the verdict lines; Step 7 must reproduce equivalents via `#simland`.
 
-- [ ] **Step 2: Split `startGame` into `landInit(params)` + register `PHASES.land`**
+- [x] **Step 2: Split `startGame` into `landInit(params)` + register `PHASES.land`**
 
 Replace the whole `startGame` function with:
 
@@ -363,7 +363,7 @@ function landEvalMission(){
 }
 ```
 
-- [ ] **Step 3: Dispatch update/render through PH + transitions; keep legacy flow working**
+- [x] **Step 3: Dispatch update/render through PH + transitions; keep legacy flow working**
 
 In `loop()` nothing changes. In the global flow:
 
@@ -385,7 +385,7 @@ function update(dt){            // new top-level dispatcher, same name the loop 
     ctx.textAlign='center'; ctx.fillText(TRANS.label||'…',W/2,H/2); ctx.textAlign='left'; ctx.globalAlpha=1; }
 ```
 
-- [ ] **Step 4: Mission report UI (`endMission`) + save v3**
+- [x] **Step 4: Mission report UI (`endMission`) + save v3**
 
 Replace `SKEY` block additions (keep old SKEY constant for mute migration):
 
@@ -425,7 +425,7 @@ function endMission(failRes){
 }
 ```
 
-- [ ] **Step 5: Menu — Campaign launches missions; Practice tab keeps the old game**
+- [x] **Step 5: Menu — Campaign launches missions; Practice tab keeps the old game**
 
 In the menu code: rename tab labels and wire `playBtn`:
 
@@ -452,7 +452,7 @@ let relaunch=null;            // set inside playBtn handler for both branches
 
 (Wire `$('#rRetry').onclick=()=>relaunch&&relaunch();`, `$('#rNext').onclick=()=>{ if(RUN&&RUN.idx<CAMPAIGN.length-1) startMission(RUN.idx+1); };` and the `r` key to `relaunch`.)
 
-- [ ] **Step 6: Temporary campaign stub + `#simland` harness**
+- [x] **Step 6: Temporary campaign stub + `#simland` harness**
 
 Replace the old 18-entry CAMPAIGN with a stub so the file stays runnable until Task 5:
 
@@ -484,7 +484,7 @@ if(p[0]==='sim'){ diff=DIFFS[p[1]]?p[1]:'realistic'; ap=1;
 (`#play`/`#shot` keep working: change their `startGame()` calls to `startMission(campIdx)`.)
 Note `#simland` drives `landUpdate` directly and `#sim` drives the dispatcher `update` — transitions advance because `stepTransition` runs inside it.
 
-- [ ] **Step 7: AFTER regression check vs Step 1 baseline**
+- [x] **Step 7: AFTER regression check vs Step 1 baseline**
 
 ```bash
 run test                                  # expect TESTS PASS 7/7
@@ -496,7 +496,7 @@ run sim:realistic:0                       # temp mission → RESULT COMPLETE/PER
 Expected: every `simland` line ends `RESULT GOOD AUTO…`/`PERFECT`/`HARD` (success verdicts — same class of outcomes as /tmp/before.txt; exact scores may differ where rng differs). `TIMEOUT`, `CRASH`, `LOST`, or a JS-error title = regression: stop and fix before proceeding.
 Also run the frame-1 check: `run ""` → plain `Booster — Rocket Landing` title.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add index.html && git commit -m "refactor: landing behind phase interface; missions launch via RUN; Practice mode; save v3; #simland harness
@@ -512,7 +512,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Files:** Modify `index.html`: CAMPAIGN stub from Task 4, WORLDS table.
 
-- [ ] **Step 1: Add `atmoTop` to WORLDS** (entry/ascent need it; Moon=0 means no entry phase):
+- [x] **Step 1: Add `atmoTop` to WORLDS** (entry/ascent need it; Moon=0 means no entry phase):
 
 ```js
 // WORLDS additions (one field per world):
@@ -522,7 +522,7 @@ moon: {... atmoTop:0},      mars: {... atmoTop:7000},
 
 The game's "space line" is 10 km of game-altitude (KSP-style compression per spec §3.2) — the ALTITUDE card just shows honest km.
 
-- [ ] **Step 2: Replace the Task-4 CAMPAIGN stub with the real Part-1 table**
+- [x] **Step 2: Replace the Task-4 CAMPAIGN stub with the real Part-1 table**
 
 ```js
 const CAMPAIGN=[
@@ -538,7 +538,7 @@ const CAMPAIGN=[
 ];
 ```
 
-- [ ] **Step 3: Mission cards show phase-chain icons** — in `buildCampaign`, replace the old `tags` line with:
+- [x] **Step 3: Mission cards show phase-chain icons** — in `buildCampaign`, replace the old `tags` line with:
 
 ```js
 const ICONS={ascent:'🚀',entry:'🔥',land:'🛬',orbit:'🌍',dock:'🔗'};
@@ -548,9 +548,9 @@ const tags=[WORLDS[m.w].ic+' '+WORLDS[m.w].name.split(' · ').pop(),
 
 (everything else in the card markup stays; `prog3(diff)` already wired in Task 4.)
 
-- [ ] **Step 4: Run sanity** — `run test` → `TESTS PASS 7/7`; `run ""` → clean title. `run sim:realistic:0` → will FAIL/TIMEOUT (ascent not implemented yet) — that's expected; do NOT debug it here.
+- [x] **Step 4: Run sanity** — `run test` → `TESTS PASS 7/7`; `run ""` → clean title. `run sim:realistic:0` → will FAIL/TIMEOUT (ascent not implemented yet) — that's expected; do NOT debug it here.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add index.html && git commit -m "feat: Part-1 campaign table (M1 hop, M2 Kármán) + world atmoTop

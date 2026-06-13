@@ -282,10 +282,10 @@ const TAU=Math.PI*2, DEG=180/Math.PI, deg2rad=d=>d/DEG;
 /* ═════════════════ CONTENT ═════════════════ */
 // WORLD: gravity, wind, atmosphere + look.   sky=[topColor,horizonColor], ground=color
 const WORLDS={
-  sea:      {name:'Earth · Sea',      g:8.0, wind:1.4, stars:true,  body:null,  sun:false, sky:['#070b1a','#122247'], ground:'#10202e', haze:0,   ic:'🌊'},
-  port:     {name:'Earth · Spaceport',g:8.0, wind:1.1, stars:false, body:null,  sun:true,  sky:['#243b6b','#e8a878'], ground:'#2a2f3a', haze:0,   ic:'🏙️'},
-  moon:     {name:'The Moon',         g:1.6, wind:0,   stars:true,  body:'earth',sun:false, sky:['#02030a','#05060f'], ground:'#9aa0ac', haze:0,   ic:'🌕'},
-  mars:     {name:'Mars',             g:3.7, wind:1.3, stars:false, body:null,  sun:true,  sky:['#3a2418','#caa07a'], ground:'#7a3a26', haze:.18, ic:'🔴'},
+  sea:      {name:'Earth · Sea',      g:8.0, wind:1.4, stars:true,  body:null,  sun:false, sky:['#070b1a','#122247'], ground:'#10202e', haze:0,   ic:'🌊', atmoTop:10000},
+  port:     {name:'Earth · Spaceport',g:8.0, wind:1.1, stars:false, body:null,  sun:true,  sky:['#243b6b','#e8a878'], ground:'#2a2f3a', haze:0,   ic:'🏙️', atmoTop:10000},
+  moon:     {name:'The Moon',         g:1.6, wind:0,   stars:true,  body:'earth',sun:false, sky:['#02030a','#05060f'], ground:'#9aa0ac', haze:0,   ic:'🌕', atmoTop:0},
+  mars:     {name:'Mars',             g:3.7, wind:1.3, stars:false, body:null,  sun:true,  sky:['#3a2418','#caa07a'], ground:'#7a3a26', haze:.18, ic:'🔴', atmoTop:7000},
 };
 // ROCKET: accel = m/s² at full throttle (TWR = accel/g). fuel = seconds at full.
 const ROCKETS={
@@ -339,8 +339,15 @@ const TERRAINS={
 const H0={wind:0,gust:0,moving:0,fog:0,dust:0,flick:0,fuelMul:1,altMul:1};
 function hz(o){ return Object.assign({},H0,o); }
 const CAMPAIGN=[
-  {w:'port',r:'falcon9',name:'First Landing (temp)',d:'Placeholder until ascent ships.',
-   phases:[{type:'land',label:'LAND',world:'port',terrain:'pad',rocket:'falcon9',a:240}]},
+ {w:'port',r:'falcon9',name:'First Flight',d:'Up, over, and down on the pad. Learn throttle and lean.',
+  phases:[
+   {type:'ascent',label:'ASCENT',world:'port',rocket:'falcon9',hop:true,cutAlt:1400,hand:340},
+   {type:'land',  label:'LAND',  world:'port',terrain:'pad',rocket:'falcon9',a:340,hazards:{}}]},
+ {w:'port',r:'falcon9',name:'Kármán Line',d:'Ride the full stack to space, stage on the way, survive re-entry.',
+  phases:[
+   {type:'ascent',label:'ASCENT',  world:'port',rocket:'falcon9',cutAlt:10500},
+   {type:'entry', label:'RE-ENTRY',world:'port',gMax:0},
+   {type:'land',  label:'LAND',    world:'port',terrain:'pad',rocket:'falcon9',a:300,hazards:{wind:.4}}]},
 ];
 
 /* ═════════════════ persistence ═════════════════ */
@@ -952,8 +959,10 @@ function buildMenu(){
 function buildCampaign(){
   const p=prog3(diff);
   $('#campProgress').textContent='('+Math.min(p.unlocked+1,CAMPAIGN.length)+' / '+CAMPAIGN.length+' unlocked · '+DIFFS[diff].name+')';
+  const ICONS={ascent:'🚀',entry:'🔥',land:'🛬',orbit:'🌍',dock:'🔗'};
   $('#missions').innerHTML=CAMPAIGN.map((m,i)=>{ const locked=i>p.unlocked, best=p.best[i];
-    const tags=[WORLDS[m.w].ic+' '+WORLDS[m.w].name.split(' · ').pop(), m.phases.length+' phase'+(m.phases.length>1?'s':'')];
+    const tags=[WORLDS[m.w].ic+' '+WORLDS[m.w].name.split(' · ').pop(),
+                m.phases.map(p=>ICONS[p.type]||'•').join(' ')];
     return '<div class="mish'+(i===campIdx&&!locked?' sel':'')+(locked?' locked':'')+(best?' done':'')+'" data-i="'+i+'">'
       +(locked?'<div class="lk">🔒</div>':'')+'<div class="num">MISSION '+(i+1)+'</div><div class="mn">'+m.name+'</div>'
       +'<div class="md">'+m.d+'</div><div class="tags">'+tags.map(t=>'<span class="tg">'+t+'</span>').join('')+'</div>'
