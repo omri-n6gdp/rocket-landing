@@ -919,7 +919,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Files:** none (verification only) — fixes allowed, each with its own commit.
 
-- [ ] **Step 1: Full autopilot matrix (the Part-1 gate)**
+- [x] **Step 1: Full autopilot matrix (the Part-1 gate)**
 
 ```bash
 for d in arcade realistic hardcore; do for i in 0 1; do echo "$d M$((i+1)): $(run sim:$d:$i)"; done; done
@@ -929,7 +929,7 @@ run test
 
 Expected: 6/6 missions `RESULT COMPLETE…` (or PERFECT), 5/5 practice `GOOD/PERFECT/HARD`, tests PASS. Any other outcome: STOP, fix (systematic-debugging skill), re-run whole step.
 
-- [ ] **Step 2: The human path (mandatory — the 2026-06-11 rule)**
+- [x] **Step 2: The human path (mandatory — the 2026-06-11 rule)**
 
 ```bash
 export PATH="/opt/homebrew/bin:$PATH"
@@ -947,9 +947,9 @@ agent-browser close --all
 
 Also click through: Esc → menu shows → Practice tab → pick tower/starship → Launch → flies (5 s eval `gameState==='play'`).
 
-- [ ] **Step 3: Phone-layout smoke** — `run shot:realistic:0:5` then screenshot the file with the existing `#shot` flow in agent-browser at 390×844 (`agent-browser open --viewport 390x844 "$G#shot:realistic:0:5"`, screenshot, eyeball: STAGE button visible during ascent, cards readable, nothing overlapping).
+- [x] **Step 3: Phone-layout smoke** — `run shot:realistic:0:5` then screenshot the file with the existing `#shot` flow in agent-browser at 390×844 (`agent-browser open --viewport 390x844 "$G#shot:realistic:0:5"`, screenshot, eyeball: STAGE button visible during ascent, cards readable, nothing overlapping).
 
-- [ ] **Step 4: Update the project CLAUDE.md** — create `~/code/rocket-landing/CLAUDE.md`:
+- [x] **Step 4: Update the project CLAUDE.md** — create `~/code/rocket-landing/CLAUDE.md`:
 
 ```markdown
 # Booster — rocket game (single index.html)
@@ -964,7 +964,7 @@ Also click through: Esc → menu shows → Practice tab → pick tower/starship 
   Spec: docs/superpowers/specs/2026-06-11-full-missions-design.md (Parts 2–3 pending).
 ```
 
-- [ ] **Step 5: Tag and final commit**
+- [x] **Step 5: Tag and final commit**
 
 ```bash
 git add -A && git commit -m "docs: project CLAUDE.md (harness + human-path rule)
