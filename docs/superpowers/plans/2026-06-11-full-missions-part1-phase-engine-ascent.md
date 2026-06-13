@@ -891,11 +891,11 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Files:** Modify `index.html`: `landUpdate` AP hook, `cycleAP`.
 
-- [ ] **Step 1: Confirm land phase AP works inside missions** — `landUpdate` already calls `autopilot(dt)` when `ap!==0`; missions reach it through `PHASES.land.update`. Verify: `run sim:realistic:0` shows phases all succeed (`phases=OK,…` with no `CRASH`). If the lander drifts: check that `landInit` reset `apPrevPadX=0` (it does — Task 4 code).
+- [x] **Step 1: Confirm land phase AP works inside missions** — `landUpdate` already calls `autopilot(dt)` when `ap!==0`; missions reach it through `PHASES.land.update`. Verify: `run sim:realistic:0` shows phases all succeed (`phases=OK,…` with no `CRASH`). If the lander drifts: check that `landInit` reset `apPrevPadX=0` (it does — Task 4 code).
 
-- [ ] **Step 2: Make `R`/`r` retry work mid-mission** — already wired via `relaunch` (Task 4 Step 5). Manual check in a real browser later (Task 9); here just verify the binding exists: `grep -c "relaunch" index.html` ≥ 4.
+- [x] **Step 2: Make `R`/`r` retry work mid-mission** — already wired via `relaunch` (Task 4 Step 5). Manual check in a real browser later (Task 9); here just verify the binding exists: `grep -c "relaunch" index.html` ≥ 4.
 
-- [ ] **Step 3: Sweep stray references** —
+- [x] **Step 3: Sweep stray references** —
 
 ```bash
 grep -n "startGame" index.html   # expect ZERO hits (all call sites replaced in Task 4)
@@ -905,7 +905,7 @@ run test && run "" && run sim:realistic:0 && run sim:realistic:1 && run simland:
 
 All green/expected titles before committing.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add index.html && git commit -m "chore: retry wiring + stray reference sweep for mission flow
