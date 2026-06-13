@@ -286,10 +286,10 @@ const TAU=Math.PI*2, DEG=180/Math.PI, deg2rad=d=>d/DEG;
 /* ═════════════════ CONTENT ═════════════════ */
 // WORLD: gravity, wind, atmosphere + look.   sky=[topColor,horizonColor], ground=color
 const WORLDS={
-  sea:      {name:'Earth · Sea',      g:8.0, wind:1.4, stars:true,  body:null,  sun:false, sky:['#070b1a','#122247'], ground:'#10202e', haze:0,   ic:'🌊', atmoTop:10000},
-  port:     {name:'Earth · Spaceport',g:8.0, wind:1.1, stars:false, body:null,  sun:true,  sky:['#243b6b','#e8a878'], ground:'#2a2f3a', haze:0,   ic:'🏙️', atmoTop:10000},
-  moon:     {name:'The Moon',         g:1.6, wind:0,   stars:true,  body:'earth',sun:false, sky:['#02030a','#05060f'], ground:'#9aa0ac', haze:0,   ic:'🌕', atmoTop:0},
-  mars:     {name:'Mars',             g:3.7, wind:1.3, stars:false, body:null,  sun:true,  sky:['#3a2418','#caa07a'], ground:'#7a3a26', haze:.18, ic:'🔴', atmoTop:7000},
+  sea:      {name:'Earth · Sea',      g:8.0, wind:1.4, stars:true,  body:null,  sun:false, sky:['#070b1a','#122247'], ground:'#10202e', haze:0,   ic:'🌊', atmoTop:10000, R:600, mu:400000, atmoH:70, atmoEntry:40, orbitColor:'#5cc8ff'},
+  port:     {name:'Earth · Spaceport',g:8.0, wind:1.1, stars:false, body:null,  sun:true,  sky:['#243b6b','#e8a878'], ground:'#2a2f3a', haze:0,   ic:'🏙️', atmoTop:10000, R:600, mu:400000, atmoH:70, atmoEntry:40, orbitColor:'#5cc8ff'},
+  moon:     {name:'The Moon',         g:1.6, wind:0,   stars:true,  body:'earth',sun:false, sky:['#02030a','#05060f'], ground:'#9aa0ac', haze:0,   ic:'🌕', atmoTop:0,     R:300, mu:90000,  atmoH:0,  atmoEntry:0,  orbitColor:'#aab3c6'},
+  mars:     {name:'Mars',             g:3.7, wind:1.3, stars:false, body:null,  sun:true,  sky:['#3a2418','#caa07a'], ground:'#7a3a26', haze:.18, ic:'🔴', atmoTop:7000,  R:480, mu:260000, atmoH:50, atmoEntry:30, orbitColor:'#ff9b6b'},
 };
 // ROCKET: accel = m/s² at full throttle (TWR = accel/g). fuel = seconds at full.
 const ROCKETS={
@@ -324,6 +324,37 @@ function craftAccel(c,thr){ const s=c.stages[c.si]; return s.fuel>0 ? thr*s.thru
 function burnStage(c,thr,dt){ const s=c.stages[c.si]; s.fuel=Math.max(0,s.fuel-thr*s.rate*dt); }
 function canStage(c){ return c.si<c.stages.length-1; }
 function doStage(c){ if(!canStage(c)) return false; c.si++; return true; }
+/* ═════════════════ ORBITAL MECHANICS (2D planet-centric, km & s) ═════════════════
+   r=(x,y) km from body centre, v=(vx,vy) km/s, mu in km^3/s^2.
+   Assumes prograde counterclockwise (h>0), elliptic (0<=e<1) — the only orbits the game makes. */
+function vCirc(r,mu){ return Math.sqrt(mu/r); }
+function orbElements(rx,ry,vx,vy,mu){
+  const r=Math.hypot(rx,ry), v2=vx*vx+vy*vy, rv=rx*vx+ry*vy;
+  const energy=v2/2 - mu/r, a=-mu/(2*energy);
+  const ex=(v2/mu - 1/r)*rx - rv/mu*vx, ey=(v2/mu - 1/r)*ry - rv/mu*vy;
+  const e=Math.hypot(ex,ey), omega=Math.atan2(ey,ex);
+  let nu=Math.atan2(ry,rx)-omega; nu=Math.atan2(Math.sin(nu),Math.cos(nu));
+  const okElliptic=energy<0;
+  return { a,e,omega,nu,energy, h:rx*vy-ry*vx,
+           ap: okElliptic? a*(1+e):Infinity, pe: a*(1-e),
+           period: okElliptic? 2*Math.PI*Math.sqrt(a*a*a/mu):Infinity,
+           n: okElliptic? Math.sqrt(mu/(a*a*a)):0 };
+}
+function solveKepler(M,e){ M=Math.atan2(Math.sin(M),Math.cos(M)); let E=e<0.8?M:Math.PI;
+  for(let i=0;i<8;i++){ const d=(E-e*Math.sin(E)-M)/(1-e*Math.cos(E)); E-=d; if(Math.abs(d)<1e-12)break; } return E; }
+function eccFromTrue(nu,e){ return Math.atan2(Math.sqrt(1-e*e)*Math.sin(nu), e+Math.cos(nu)); }
+function trueFromEcc(E,e){ return Math.atan2(Math.sqrt(1-e*e)*Math.sin(E), Math.cos(E)-e); }
+function orbStateAt(a,e,omega,nu,mu){                      // perifocal -> world (ccw)
+  const p=a*(1-e*e), r=p/(1+e*Math.cos(nu)), vp=Math.sqrt(mu/p);
+  const cx=r*Math.cos(nu), cy=r*Math.sin(nu), vcx=-vp*Math.sin(nu), vcy=vp*(e+Math.cos(nu));
+  const c=Math.cos(omega), s=Math.sin(omega);
+  return { x:cx*c-cy*s, y:cx*s+cy*c, vx:vcx*c-vcy*s, vy:vcx*s+vcy*c, r };
+}
+function orbAdvance(el, dt, mu){                            // closed-form coast step
+  const E0=eccFromTrue(el.nu,el.e), M0=E0-el.e*Math.sin(E0);
+  const E=solveKepler(M0+el.n*dt, el.e), nu=trueFromEcc(E,el.e);
+  return orbStateAt(el.a, el.e, el.omega, nu, mu);
+}
 // DIFFICULTY: landing tolerances + fuel margin + assist + score multiplier + pad scale.
 const DIFFS={
   arcade:   {name:'Arcade',   vMax:6.0, hMax:3.6, tilt:15, fuelMul:1.3, autoLevel:1.2, mult:1.0, padScale:1.3, dc:'#5cc8ff', ds:'forgiving'},
@@ -1303,6 +1334,35 @@ T_('ascent: Max-Q envelope narrows with q then relaxes', ()=>{
 });
 T_('entry: cone drifts inside ±0.75 and is finite', ()=>{
   for(let t=0;t<30;t+=0.37){ const c=entryCone(t,1.234); ok(isFinite(c)&&Math.abs(c)<=0.75,'t='+t); }
+});
+T_('orbit: circular orbit has e~0 and the spec period', ()=>{
+  const mu=400000, r0=720, v=Math.sqrt(mu/r0);
+  const el=orbElements(r0,0, 0,v, mu);
+  near(el.e,0,1e-6,'circular'); near(el.a,r0,1e-6,'a=r');
+  ok(el.period>120&&el.period<240,'LEO period 2-4 min, got '+el.period);
+});
+T_('orbit: ellipse apoapsis/periapsis from a,e', ()=>{
+  const mu=400000, a=700, e=0.2;                 // start at periapsis
+  const rp=a*(1-e), vp=Math.sqrt(mu*(2/rp-1/a));
+  const el=orbElements(rp,0, 0,vp, mu);
+  near(el.pe,rp,1e-4,'pe'); near(el.ap,a*(1+e),1e-4,'ap'); near(el.e,e,1e-4,'e');
+});
+T_('orbit: Kepler solver inverts mean anomaly', ()=>{
+  for(const e of [0,0.1,0.5,0.85]) for(const M of [0.3,1.7,3.0,5.5]){
+    const E=solveKepler(M,e); near(E-e*Math.sin(E),Math.atan2(Math.sin(M),Math.cos(M)),1e-9,'e='+e+' M='+M); }
+});
+T_('orbit: coast advances ccw and round-trips over a full period', ()=>{
+  const mu=400000, r0=720, v=Math.sqrt(mu/r0);
+  const el=orbElements(r0,0, 0,v, mu);
+  const q=orbAdvance(el, el.period/4, mu);       // quarter turn ccw: (r,0)->(0,r)
+  near(q.x,0,1e-2,'x~0'); near(q.y,r0,1e-2,'y~r');
+  const full=orbAdvance(el, el.period, mu);
+  near(full.x,r0,1e-2,'back to x'); near(full.y,0,1e-2,'back to y');
+});
+T_('orbit: vCirc and escape classification', ()=>{
+  const mu=400000; near(vCirc(720,mu), Math.sqrt(mu/720), 1e-9);
+  const el=orbElements(720,0, 0,Math.sqrt(2*mu/720)+0.5, mu);  // above escape speed
+  ok(el.energy>0 || el.a<0, 'hyperbolic/escape detected');
 });
 (function(){ const p=location.hash.replace('#','').toLowerCase().split(':');
   if(p[0]==='test'){ runTests(); return; }
