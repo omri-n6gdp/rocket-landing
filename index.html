@@ -801,6 +801,24 @@ function orbBurn(o, dvMag, dt, mu){                 // numerical integrate thrus
 function orbBurnAlong(o, ang, dv, mu){              // apply an impulse dv (km/s) along heading `ang`
   o.vx+=Math.cos(ang)*dv; o.vy+=Math.sin(ang)*dv; o.el=orbElements(o.x,o.y,o.vx,o.vy,mu);
 }
+/* objective specs: {type:'circularize',alt} | {type:'deorbit',entryAlt}
+   returns {dv (signed km/s), burnNu (rad), met (bool), kind ('prograde'|'retrograde'), label} */
+function orbGuide(obj, o, R, diff){
+  const mu=o.mu, el=orbElements(o.x,o.y,o.vx,o.vy,mu);
+  const tolE = diff==='arcade'?0.04 : diff==='hardcore'?0.012 : 0.022;       // eccentricity tolerance
+  if(obj.type==='circularize'){
+    const rTgt=R+obj.alt, ra=el.ap, burnNu=Math.PI;                          // circularize at apoapsis
+    const vAp=Math.sqrt(mu*(2/ra-1/el.a)), dv=vCirc(ra,mu)-vAp;
+    const altTol = diff==='arcade'?40 : diff==='hardcore'?12 : 22;
+    const met = el.e<tolE && Math.abs(el.a-rTgt)<altTol;
+    return {dv, burnNu, met, kind:'prograde', label:'CIRCULARIZE'};
+  } else { // deorbit
+    const rEntry=R+obj.entryAlt, ra=el.ap;
+    const aT=(ra+rEntry)/2, vAt=Math.sqrt(mu*(2/ra-1/aT)), vNow=Math.sqrt(mu*(2/ra-1/el.a));
+    const met = el.pe <= rEntry;
+    return {dv: vAt-vNow, burnNu:Math.PI, met, kind:'retrograde', label:'DEORBIT'};
+  }
+}
 
 /* ═════════════════ AUTOPILOT (feedback / PID-style) ═════════════════
    Reads only HUD-visible state; outputs the same binary controls as the player. */
@@ -1405,6 +1423,22 @@ T_('orbit: a prograde burn raises apoapsis', ()=>{
 T_('warp: clamps to the ladder and never goes below 1', ()=>{
   eq(warpStep(1,+1),10); eq(warpStep(10,+1),100); eq(warpStep(1000,+1),1000,'caps');
   eq(warpStep(1,-1),1,'floor'); eq(warpStep(100,-1),10);
+});
+T_('guidance: circularize wants a prograde burn at apoapsis and detects completion', ()=>{
+  const mu=400000, ra=720, rp=660, a=(ra+rp)/2;          // ellipse, apoapsis 720
+  const vAp=Math.sqrt(mu*(2/ra-1/a)); const o=mkOrbit(0,ra, vAp,0, mu);  // at apoapsis, moving +x (ccw)
+  const g=orbGuide({type:'circularize',alt:120}, o, 600, 'realistic'); // R=600 -> alt 120 = r 720
+  ok(g.dv>0,'prograde'); ok(Math.abs(g.dv-(vCirc(ra,mu)-vAp))<1e-3,'dv to circular');
+  ok(!g.met,'eccentric not yet circular');
+  const c=mkOrbit(0,720, vCirc(720,mu),0, mu);
+  ok(orbGuide({type:'circularize',alt:120}, c, 600, 'realistic').met,'circular meets it');
+});
+T_('guidance: deorbit wants retrograde and completes when periapsis enters atmosphere', ()=>{
+  const mu=400000; const c=mkOrbit(0,720, vCirc(720,mu),0, mu);
+  const g=orbGuide({type:'deorbit',entryAlt:40}, c, 600, 'realistic');
+  ok(g.dv<0,'retrograde to drop periapsis');
+  const decaying=mkOrbit(0,720, vCirc(720,mu)*0.82,0, mu);    // periapsis now deep
+  ok(orbGuide({type:'deorbit',entryAlt:40}, decaying, 600, 'realistic').met,'pe in atmosphere');
 });
 (function(){ const p=location.hash.replace('#','').toLowerCase().split(':');
   if(p[0]==='test'){ runTests(); return; }
