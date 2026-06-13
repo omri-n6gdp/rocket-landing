@@ -460,6 +460,7 @@ const PHASES={};
 function startMission(idx){
   const m=CAMPAIGN[idx];
   RUN={ idx, m, pi:-1, results:[], carry:{}, score:0, craft:mkCraft(m.r) };
+  TRANS=null;                       // retry mid-transition must not skip the new run's first phase
   WLD=WORLDS[m.w];
   paused=false; particles.length=0; shake=0; apLatch=false; apIx=0; apPrevPadX=0;
   $('#menu').classList.remove('show'); $('#report').classList.remove('show'); $('#pause').classList.remove('show');
