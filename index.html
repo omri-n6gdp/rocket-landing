@@ -777,6 +777,31 @@ PHASES.entry={
     else apP.classList.remove('on'); },
 };
 
+/* ═════════════════ ORBIT PHASE ═════════════════
+   Own scale domain (km, planet-centric). Coast = closed-form Kepler (warp-safe);
+   thrust = numerical integrate at warp 1. Talks to the rest only via RUN.carry. */
+let ORB=null, O=null, orbWarp=1, orbBurning=false;
+const WARPS=[1,10,100,1000];
+function warpStep(w,dir){ let i=WARPS.indexOf(w); if(i<0)i=0; i=clamp(i+dir,0,WARPS.length-1); return WARPS[i]; }
+function mkOrbit(x,y,vx,vy,mu){ const o={x,y,vx,vy,mu}; o.el=orbElements(x,y,vx,vy,mu); return o; }
+function orbCoast(o, dt, mu){                       // advance along the conic, exact
+  o.el=orbElements(o.x,o.y,o.vx,o.vy,mu);
+  if(o.el.energy>=0) return;                        // escape: caller handles (LOST)
+  const s=orbAdvance(o.el, dt, mu); o.x=s.x; o.y=s.y; o.vx=s.vx; o.vy=s.vy;
+}
+function orbBurn(o, dvMag, dt, mu){                 // numerical integrate thrust at warp 1
+  const steps=Math.max(1,Math.ceil(dt/(1/120))), h=dt/steps, aThr=dvMag/dt;   // accel along current velocity dir
+  for(let i=0;i<steps;i++){
+    const r=Math.hypot(o.x,o.y), gr=-o.mu/(r*r), sp=Math.hypot(o.vx,o.vy)||1;
+    const ax=gr*o.x/r + aThr*o.vx/sp, ay=gr*o.y/r + aThr*o.vy/sp;
+    o.vx+=ax*h; o.vy+=ay*h; o.x+=o.vx*h; o.y+=o.vy*h;   // semi-implicit Euler
+  }
+  o.el=orbElements(o.x,o.y,o.vx,o.vy,mu);
+}
+function orbBurnAlong(o, ang, dv, mu){              // apply an impulse dv (km/s) along heading `ang`
+  o.vx+=Math.cos(ang)*dv; o.vy+=Math.sin(ang)*dv; o.el=orbElements(o.x,o.y,o.vx,o.vy,mu);
+}
+
 /* ═════════════════ AUTOPILOT (feedback / PID-style) ═════════════════
    Reads only HUD-visible state; outputs the same binary controls as the player. */
 function cycleAP(){ ap=(ap+1)%3; if(ap!==0) audioResume(); updateAPBtn(); }
@@ -1363,6 +1388,23 @@ T_('orbit: vCirc and escape classification', ()=>{
   const mu=400000; near(vCirc(720,mu), Math.sqrt(mu/720), 1e-9);
   const el=orbElements(720,0, 0,Math.sqrt(2*mu/720)+0.5, mu);  // above escape speed
   ok(el.energy>0 || el.a<0, 'hyperbolic/escape detected');
+});
+T_('orbit: coast is warp-invariant (closed-form, no drift)', ()=>{
+  const mu=400000;
+  const big=()=>{ const o=mkOrbit(720,0,0,vCirc(720,mu),mu); orbCoast(o, 50, mu); return o; };
+  const small=()=>{ const o=mkOrbit(720,0,0,vCirc(720,mu),mu); for(let i=0;i<5000;i++) orbCoast(o, 50/5000, mu); return o; };
+  const A=big(), B=small();
+  near(A.x,B.x,1e-3,'x warp-invariant'); near(A.y,B.y,1e-3,'y warp-invariant');
+});
+T_('orbit: a prograde burn raises apoapsis', ()=>{
+  const mu=400000; const o=mkOrbit(720,0, 0,vCirc(720,mu), mu);
+  const ap0=orbElements(o.x,o.y,o.vx,o.vy,mu).ap;
+  orbBurn(o, 1.0, 0.5, mu);                 // +1 km/s prograde over 0.5 s of dt
+  ok(orbElements(o.x,o.y,o.vx,o.vy,mu).ap > ap0+1, 'apoapsis rose');
+});
+T_('warp: clamps to the ladder and never goes below 1', ()=>{
+  eq(warpStep(1,+1),10); eq(warpStep(10,+1),100); eq(warpStep(1000,+1),1000,'caps');
+  eq(warpStep(1,-1),1,'floor'); eq(warpStep(100,-1),10);
 });
 (function(){ const p=location.hash.replace('#','').toLowerCase().split(':');
   if(p[0]==='test'){ runTests(); return; }
