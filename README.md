@@ -1,5 +1,7 @@
 # Booster: rocket landing game
 
+**▶ Try it online: [https://omri-n6gdp.github.io/rocket-landing/](https://omri-n6gdp.github.io/rocket-landing/)** (works on phones too)
+
 Booster: rocket-landing game. 4 worlds (sea, spaceport, Moon, Mars), 5 rockets, an 18-mission campaign, weather hazards and a self-landing autopilot. Single HTML file, plays on phone too.
 
 ![Menu](screenshots/menu.png)
